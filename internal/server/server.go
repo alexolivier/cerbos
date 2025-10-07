@@ -173,6 +173,22 @@ func (s *Server) Start(ctx context.Context, core *CoreComponents) error {
 		return err
 	}
 
+	// Start AuthZEN server on a dedicated port if enabled
+	var authzenServer *http.Server
+	if s.conf.AuthZEN.Enabled {
+		authzenL, err := s.createListener(ctx, s.conf.AuthZEN.ListenAddr)
+		if err != nil {
+			log.Error("Failed to create AuthZEN listener", zap.Error(err))
+			return err
+		}
+
+		authzenServer, err = s.startAuthZENServer(ctx, authzenL, grpcServer)
+		if err != nil {
+			log.Error("Failed to start AuthZEN server", zap.Error(err))
+			return err
+		}
+	}
+
 	s.pool.Go(func(ctx context.Context) error {
 		<-ctx.Done()
 		log.Info("Shutting down")
@@ -189,6 +205,13 @@ func (s *Server) Start(ctx context.Context, core *CoreComponents) error {
 
 		if err := httpServer.Shutdown(shutdownCtx); err != nil {
 			log.Error("Failed to cleanly shutdown HTTP server", zap.Error(err))
+		}
+
+		if authzenServer != nil {
+			log.Debug("Shutting down AuthZEN server")
+			if err := authzenServer.Shutdown(shutdownCtx); err != nil {
+				log.Error("Failed to cleanly shutdown AuthZEN server", zap.Error(err))
+			}
 		}
 
 		return nil
