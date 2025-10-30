@@ -241,3 +241,34 @@ Thanks a lot for spending your time helping Cerbos grow. Keep rocking 🥂
 <a>
   <img src="https://contributors-img.web.app/image?repo=cerbos/cerbos" alt="Contributors"/>
 </a>
+
+
+## AuthZEN Translation Layer
+
+Cerbos can expose a minimal OpenID AuthZEN-compatible HTTP API as a translation layer to the existing CheckResources API.
+
+Configuration (YAML):
+
+```yaml
+server:
+  # Enable the AuthZEN translation layer
+  authzen:
+    enabled: true
+    # Listen address for the AuthZEN HTTP server (TCP or unix: socket)
+    # Defaults to ":3595" if not set
+    listenAddr: ":3595"
+```
+
+Endpoints (served by the AuthZEN server):
+- `/.well-known/authzen-configuration` (metadata)
+- `POST /access/v1/evaluation`
+- `POST /access/v1/evaluations`
+
+Notes:
+- Only evaluation endpoints are implemented. Subject/Resource/Action search endpoints are not implemented and are intentionally omitted from metadata.
+- Requests are translated to Cerbos CheckResources calls. Supplying `subject.properties.roles` is **required**; requests without at least one role are rejected with HTTP `400`.
+- The AuthZEN subject type is exposed inside the Cerbos principal attributes under `$type` (e.g., `attr["$type"] = "user"`).
+- AuthZEN `context`, if present, is embedded under `$context` inside the principal attributes for policy evaluation.
+ - If the underlying Cerbos CheckResources result includes `outputs`, they are returned in the AuthZEN decision under `context.outputs` (each item includes `src` and `val`).
+- `options.evaluations_semantic` is accepted but only `"execute_all"` is currently supported; requests specifying any other value are rejected with `400`.
+- TLS is optional. When `server.tls` is configured the AuthZEN server advertises HTTPS endpoints; otherwise endpoints are served over HTTP, which can be secured by an upstream load balancer or service mesh.
