@@ -128,3 +128,8 @@ If enforcement level is `reject` and the request is invalid according to the sch
   }
 }
 ----
+
+[TIP]
+====
+When connected to Cerbos Hub, schemas are validated at compile time — before policies reach any PDP. Schema violations surface in the xref:cerbos-hub:ROOT:deployments.adoc[build results] alongside test failures, and the bundle is not distributed until all validations pass.
+====

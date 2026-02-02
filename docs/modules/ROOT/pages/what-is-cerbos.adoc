@@ -21,6 +21,11 @@ Often, as systems grow, the complexity of authorization rules require complicate
 
 Cerbos' approach is to define all policy as human-readable policy definitions held centrally and that is read by all the Cerbos instances. This way any updates or changes to authorization rules can be made once and then all services that call Cerbos for permissions checks get the updated result. No code changes or releases are needed.
 
+[TIP]
+====
+xref:cerbos-hub:ROOT:index.adoc[Cerbos Hub] handles the operational infrastructure behind policy-as-code: compiling and testing policies on every commit, distributing versioned bundles to PDP instances, and collecting audit logs centrally. See xref:cerbos-hub:ROOT:getting-started.adoc[Getting started with Cerbos Hub].
+====
+
 == Bring your own identity
 
 Companies often standardize on using specialised IdPs (identity providers) like https://auth0.com/[Auth0] for authentication across their suite of applications. This contains the user profile information such as what role the user has, which department they belong to and what office they are based in.

@@ -177,6 +177,11 @@ storage:
       privateKeyFile: ${HOME}/.ssh/id_rsa
 ----
 
+[TIP]
+====
+The git driver requires each PDP instance to poll for changes independently, which can cause version drift across a fleet. The xref:configuration:storage.adoc#hub[Hub driver] receives push notifications from Cerbos Hub when new policy bundles are available, so all instances converge on the same version within seconds.
+====
+
 [#hub]
 == Hub driver
 
