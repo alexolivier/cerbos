@@ -45,5 +45,10 @@ You might also want to use a separate deployment with only a subset of your poli
 
 == Evaluating policies in the browser
 
-You can use link:https://docs.cerbos.dev/cerbos-hub/decision-points-embedded[Cerbos Hub's embedded PDPs] to evaluate your authorization policies directly in the browser.
-This allows you to perform permission checks on the front end without changing the back end.
+Cerbos Hub's xref:cerbos-hub:ROOT:deployments-epdp-rules.adoc[embedded PDPs (ePDPs)] compile policies to WebAssembly and evaluate them locally in the browser, edge functions, or mobile applications. Authorization decisions happen without network calls to a PDP service.
+
+ePDP bundles can be filtered by resource, action, scope, or role to minimize payload size and limit policy exposure. Updates are automatic; the SDK polls for new bundles when policies change in Hub.
+
+The link:https://www.npmjs.com/package/@cerbos/embedded[`@cerbos/embedded` JavaScript SDK] provides the client-side integration.
+
+NOTE: Checking permissions in the user interface is not a substitute for performing checks in the back end.

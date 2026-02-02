@@ -45,3 +45,8 @@ Test results
 ----
 
 Full testing documentation can be found xref:policies:compile.adoc[here].
+
+[TIP]
+====
+Cerbos Hub provides a browser-based xref:cerbos-hub:ROOT:playground.adoc[Playground] for developing and testing policies interactively. Playgrounds can be shared with team members for cross-functional review. Tests run on every commit, and results, including execution traces showing step-by-step rule evaluation, are visible in the Hub dashboard.
+====

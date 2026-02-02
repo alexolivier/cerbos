@@ -272,6 +272,11 @@ If this is the case, then you can use the xref:api:admin_api.adoc[Admin API] con
 
 For a full example implementation, check out https://github.com/cerbos/demo-admin-api[this demo].
 
+[TIP]
+====
+Cerbos Hub xref:cerbos-hub:ROOT:policy-stores.adoc[policy stores] provide an alternative to the Admin API for multi-tenant policy management. Each tenant or team can have its own store with independent ingestion (git, SDK, or CLI), and stores are composed into a single deployment with automated compilation and testing.
+====
+
 
 == Policy repository layout
 

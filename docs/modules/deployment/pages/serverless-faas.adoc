@@ -178,6 +178,11 @@ CERBOS_HUB_CLIENT_ID: "..."
 CERBOS_HUB_CLIENT_SECRET: ".."
 ----
 
+[TIP]
+====
+In serverless environments, the Hub storage driver delivers pre-compiled bundles on startup rather than requiring the PDP to clone and compile policies from git. This reduces cold start time and removes the need to provision git credentials in the Lambda execution environment.
+====
+
 === Comparison: Function vs Extension
 
 [cols="1,1,1"]

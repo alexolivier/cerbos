@@ -21,3 +21,8 @@ IMPORTANT: We are using link:https://github.com/ghostunnel/ghostunnel[ghostunnel
 ----
 include::example$cerbos-sidecar-demo.yaml[]
 ----
+
+[TIP]
+====
+Sidecar deployments produce many PDP instances. Cerbos Hub's xref:cerbos-hub:ROOT:decision-points.adoc[decision points dashboard] provides fleet-wide visibility: which policy version each PDP is running, active sessions, last-seen timestamps, and links to per-instance audit logs.
+====

@@ -65,6 +65,11 @@ curl -k -u cerbos:cerbosAdmin \
 ----
 
 
+[TIP]
+====
+The Admin API requires a mutable storage driver and operates on a single PDP instance. Cerbos Hub xref:cerbos-hub:ROOT:policy-stores.adoc[policy stores] provide a managed alternative for programmatic policy management: policies can be pushed via xref:cerbos-hub:ROOT:policy-stores-sdk-go.adoc[Go], xref:cerbos-hub:ROOT:policy-stores-sdk-javascript.adoc[JavaScript], xref:cerbos-hub:ROOT:policy-stores-sdk-python.adoc[Python], xref:cerbos-hub:ROOT:policy-stores-sdk-java.adoc[Java], xref:cerbos-hub:ROOT:policy-stores-sdk-dotnet.adoc[.NET], xref:cerbos-hub:ROOT:policy-stores-sdk-php.adoc[PHP], or xref:cerbos-hub:ROOT:policy-stores-sdk-rust.adoc[Rust] SDKs. Each update is validated, tested, and distributed as a versioned bundle to all connected PDPs.
+====
+
 [#policy-management]
 == Policy Management
 

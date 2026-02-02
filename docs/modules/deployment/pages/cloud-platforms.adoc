@@ -307,6 +307,10 @@ TIP: Your host or service for an application should be listening on the right ad
 - Cerbos xref:configuration:storage.adoc#postgres[`postgres` driver] with link:https://fly.io/docs/postgres/[Fly Postgres]
 - link:https://www.cerbos.dev/product-cerbos-hub[Cerbos Hub]
 
+[TIP]
+====
+The storage backends above require separate infrastructure for testing, versioning, and audit log aggregation. xref:cerbos-hub:ROOT:index.adoc[Cerbos Hub] bundles these into a single control plane: policies are compiled, tested, and distributed as versioned bundles, and audit logs are collected centrally. See xref:cerbos-hub:ROOT:getting-started.adoc[Getting started with Cerbos Hub].
+====
 
 TIP: Cerbos can be xref:configuration:index.adoc[configured entirely from the command line] using `--set` flags. On the Fly.io platform, they can be set by overriding the `cmd` setting in the link:https://fly.io/docs/reference/configuration/#the-experimental-section[`experimental` section] of the `fly.toml` file.
 

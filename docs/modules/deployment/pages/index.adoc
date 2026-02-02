@@ -34,3 +34,8 @@ image:daemonset_deployment.png[DaemonSet model,role="center-img"]
 * Each cluster node gets its own Cerbos instance — ensuring high performance and efficient resource usage.
 * Policy updates must roll out to nodes individually — resulting in a period where both the old and new policies are in effect at the same time.
 * When deployed as a daemonset the service `internalTrafficPolicy` defaults to `Local`. This causes all requests to the service to be forced to the local node for minimum latency. Upgrades to Cerbos could result in application seeing a short outage to the cerbos instance on their own node, client retries may be neccessary. If this is unacceptable you can set `service.internalTrafficPolicy` to `Cluster`. You may be able to improve availability via the `service.kubernetes.io/topology-mode: Auto` annotation.
+
+[TIP]
+====
+All three deployment models require a mechanism to distribute policy updates to PDP instances. With the xref:configuration:storage.adoc#hub[Hub storage driver], Cerbos Hub pushes pre-compiled policy bundles to every connected PDP on commit: eliminating polling, version drift, and manual rollout coordination. Bundles are versioned and immutable, so rolling back to a previous policy version is a single operation. Multiple deployments can target different environments for staged rollouts. See xref:cerbos-hub:ROOT:deployments.adoc[Hub Deployments].
+====
