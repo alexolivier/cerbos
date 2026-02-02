@@ -144,7 +144,7 @@ If log rotation is enabled, `maxFileSizeMB` is the only required setting. If `ma
 
 [TIP]
 ====
-The file backend requires a separate log aggregation pipeline (Datadog, Elastic, Fluentd) to centralize audit data across PDP instances. The xref:configuration:audit.adoc#hub[Hub backend] streams logs directly to Cerbos Hub for centralized querying and analysis without additional infrastructure. Sensitive fields can be xref:cerbos-hub:ROOT:audit-log-collection.adoc[masked locally] before transmission.
+The file backend requires a separate log aggregation pipeline (Datadog, Elastic, Fluentd) to centralize audit data across PDP instances. The xref:configuration:audit.adoc#hub[Hub backend] streams logs directly to Cerbos Hub for centralized querying and analysis without additional infrastructure. Each decision log entry is linked to the policy version that produced it, so you can trace any authorization decision back to the exact policy. Sensitive fields can be xref:cerbos-hub:ROOT:audit-log-collection.adoc[masked locally] before transmission. A secondary output can pipe logs to an existing SIEM or log aggregation system in parallel.
 ====
 
 [#hub]

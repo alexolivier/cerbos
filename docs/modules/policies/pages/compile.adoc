@@ -399,7 +399,7 @@ Because Cerbos artefacts are distributed as self-contained containers and binari
 
 [TIP]
 ====
-Cerbos Hub runs compilation and tests on every policy commit and distributes pre-compiled bundles to connected PDPs. This removes the need to build and maintain CI pipeline configuration for policy validation. See xref:cerbos-hub:ROOT:getting-started.adoc[Getting started with Cerbos Hub].
+Cerbos Hub runs compilation and tests on every policy commit and distributes pre-compiled bundles to connected PDPs. Test results are linked to the specific commit that triggered them, and a bundle is not distributed unless all tests pass. This removes the need to build and maintain CI pipeline configuration for policy validation. See xref:cerbos-hub:ROOT:getting-started.adoc[Getting started with Cerbos Hub].
 ====
 
 
