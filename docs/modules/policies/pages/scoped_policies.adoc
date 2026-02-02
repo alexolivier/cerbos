@@ -97,5 +97,5 @@ image::decision_flow.png[]
 
 [TIP]
 ====
-Cerbos Hub xref:cerbos-hub:ROOT:deployments.adoc[deployments] can compose policies from multiple stores — allowing different teams or tenants to manage their scoped policies independently. Embedded PDPs support xref:cerbos-hub:ROOT:deployments-epdp-rules.adoc[dynamic scope filtering] to serve tenant-specific policy bundles.
+Cerbos Hub xref:cerbos-hub:ROOT:deployments.adoc[deployments] can compose policies from multiple stores, allowing different teams or tenants to manage their scoped policies independently. Embedded PDPs support xref:cerbos-hub:ROOT:deployments-epdp-rules.adoc[dynamic scope filtering] to serve tenant-specific policy bundles.
 ====
