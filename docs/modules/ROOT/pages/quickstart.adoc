@@ -310,3 +310,8 @@ docker kill cerbos
 * link:https://cerbos.dev[Visit the Cerbos website]
 
 ****
+
+[TIP]
+====
+The xref:cerbos-hub:ROOT:playground.adoc[Cerbos Hub Playground] provides a browser-based environment to develop, test, and debug policies without running a local PDP. Execution traces show exactly how each rule, condition, and variable is evaluated for a given request.
+====

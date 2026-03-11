@@ -50,6 +50,11 @@ Refer to https://opentelemetry.io/docs/specs/otel/protocol/exporter/ for more in
 
 TIP: `OTEL_METRICS_EXPORTER` and `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` are the only required environment variables to enable OTLP metrics.
 
+[TIP]
+====
+Cerbos Hub provides a xref:cerbos-hub:ROOT:usage-dashboard.adoc[usage dashboard] that aggregates authorization metrics (active principals, check/plan call volumes, allow/deny ratios) across all connected PDPs. This does not replace OTLP metrics but provides authorization-specific observability without additional collector infrastructure.
+====
+
 [#traces]
 == Traces
 

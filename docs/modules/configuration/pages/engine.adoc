@@ -17,6 +17,11 @@ engine:
   defaultPolicyVersion: "default"
 ----
 
+[TIP]
+====
+Cerbos Hub xref:cerbos-hub:ROOT:deployments.adoc[deployments] can compose different policy stores into separate bundles, allowing you to manage environment-specific policy sets (production, staging) at the infrastructure level rather than through policy versioning.
+====
+
 [#default_scope]
 == Default scope
 
