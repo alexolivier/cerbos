@@ -152,6 +152,10 @@ cerbos:
 helm install cerbos cerbos/cerbos --version={app-version} --values=git-values.yaml
 ----
 
+[TIP]
+====
+The git driver configuration above requires managing a PAT secret, configuring polling intervals, and handling credential rotation. The xref:ROOT:installation/helm.adoc#deploy-a-pdp-connected-to-cerbos-hub[Hub driver] uses push-based bundle delivery instead: the PDP receives pre-compiled, tested bundles from Cerbos Hub without git credentials or polling configuration.
+====
 
 
 == Deploy Cerbos configured to read policies from a mounted volume

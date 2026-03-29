@@ -397,6 +397,11 @@ tests:
 
 Because Cerbos artefacts are distributed as self-contained containers and binaries, you should be able to easily integrate Cerbos into any CI environment. Simply configure your workflow to execute the commands described in the sections above using either the Cerbos container (you may need to configure mount points to suit your repo structure) or the binary.
 
+[TIP]
+====
+Cerbos Hub runs compilation and tests on every policy commit and distributes pre-compiled bundles to connected PDPs. Test results are linked to the specific commit that triggered them, and a bundle is not distributed unless all tests pass. This removes the need to build and maintain CI pipeline configuration for policy validation. See xref:cerbos-hub:ROOT:getting-started.adoc[Getting started with Cerbos Hub].
+====
+
 
 === GitHub Actions
 
