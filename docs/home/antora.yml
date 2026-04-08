@@ -1,0 +1,6 @@
+---
+name: home
+title: Cerbos Authorization Management Platform
+version: ~
+nav:
+  - modules/ROOT/nav.adoc

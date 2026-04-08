@@ -1,0 +1,37 @@
+= Cerbos authorization management platform
+:page-layout: home
+
+Cerbos is an authorization management platform for applications, APIs, AI agents, MCP servers, services, and workloads. It evaluates fine-grained, contextual access decisions continuously at request time.
+
+The platform is composed of four components. Each can be adopted independently.
+
+== Platform components
+
+[cols="1,3", frame=none, grid=none]
+|===
+
+| *Cerbos PDP*
+| The open-source policy decision point. Evaluates authorization requests against policy definitions and returns decisions. Stateless, AuthZEN-compliant, and designed for deployment in containers, Kubernetes, serverless runtimes, and edge environments.
+
+xref:cerbos:ROOT:index.adoc[Cerbos PDP documentation →]
+
+| *Cerbos Hub*
+| The control plane for policy authoring, testing, versioning, signed distribution, and audit log aggregation. Distributes policy bundles to connected PDPs without restarts or redeployments. Aggregates decision logs from every PDP to meet SOC 2, ISO 27001, HIPAA, PCI DSS, and GDPR audit requirements.
+
+xref:cerbos-hub:ROOT:index.adoc[Cerbos Hub documentation →]
+
+| *Cerbos PEP Integrations*
+| Client libraries and integrations for calling the PDP from application code. Available for JavaScript, Go, Python, Java, .NET, Rust, PHP, and Ruby.
+
+https://www.cerbos.dev/ecosystem[PEP Integrations →]
+
+| *Cerbos Synapse*
+| A context enrichment layer. Gathers identity, resource, and relationship data from identity providers, databases, graph stores, and internal APIs, then passes the enriched request to the PDP. Expose native protocol adapters for systems like Envoy, Kafka, and Trino.
+
+xref:synapse:ROOT:index.adoc[Cerbos Synapse documentation →]
+
+|===
+
+== How Cerbos works
+
+image::https://www.cerbos.dev/how-it-works[alt="How Cerbos works", role="center-img", width=85%]

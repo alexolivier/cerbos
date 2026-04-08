@@ -1,4 +1,4 @@
-xref:index.adoc[Cerbos]
+xref:index.adoc[Cerbos PDP]
 
 .Getting started
 * xref:what-is-cerbos.adoc[What is Cerbos?]
