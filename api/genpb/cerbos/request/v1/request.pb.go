@@ -10,10 +10,11 @@
 package requestv1
 
 import (
+	v12 "github.com/cerbos/cerbos/api/genpb/authzen/authorization/v1"
 	v11 "github.com/cerbos/cerbos/api/genpb/cerbos/audit/v1"
 	v1 "github.com/cerbos/cerbos/api/genpb/cerbos/engine/v1"
-	v12 "github.com/cerbos/cerbos/api/genpb/cerbos/policy/v1"
-	v13 "github.com/cerbos/cerbos/api/genpb/cerbos/schema/v1"
+	v13 "github.com/cerbos/cerbos/api/genpb/cerbos/policy/v1"
+	v14 "github.com/cerbos/cerbos/api/genpb/cerbos/schema/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	durationpb "google.golang.org/protobuf/types/known/durationpb"
@@ -827,6 +828,8 @@ type PlaygroundProxyRequest struct {
 	//	*PlaygroundProxyRequest_CheckResourceBatch
 	//	*PlaygroundProxyRequest_PlanResources
 	//	*PlaygroundProxyRequest_CheckResources
+	//	*PlaygroundProxyRequest_AccessEvaluation
+	//	*PlaygroundProxyRequest_AccessEvaluationBatch
 	ProxyRequest  isPlaygroundProxyRequest_ProxyRequest `protobuf_oneof:"proxy_request"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -919,6 +922,24 @@ func (x *PlaygroundProxyRequest) GetCheckResources() *CheckResourcesRequest {
 	return nil
 }
 
+func (x *PlaygroundProxyRequest) GetAccessEvaluation() *v12.AccessEvaluationRequest {
+	if x != nil {
+		if x, ok := x.ProxyRequest.(*PlaygroundProxyRequest_AccessEvaluation); ok {
+			return x.AccessEvaluation
+		}
+	}
+	return nil
+}
+
+func (x *PlaygroundProxyRequest) GetAccessEvaluationBatch() *v12.AccessEvaluationBatchRequest {
+	if x != nil {
+		if x, ok := x.ProxyRequest.(*PlaygroundProxyRequest_AccessEvaluationBatch); ok {
+			return x.AccessEvaluationBatch
+		}
+	}
+	return nil
+}
+
 type isPlaygroundProxyRequest_ProxyRequest interface {
 	isPlaygroundProxyRequest_ProxyRequest()
 }
@@ -939,6 +960,14 @@ type PlaygroundProxyRequest_CheckResources struct {
 	CheckResources *CheckResourcesRequest `protobuf:"bytes,6,opt,name=check_resources,json=checkResources,proto3,oneof"`
 }
 
+type PlaygroundProxyRequest_AccessEvaluation struct {
+	AccessEvaluation *v12.AccessEvaluationRequest `protobuf:"bytes,7,opt,name=access_evaluation,json=accessEvaluation,proto3,oneof"`
+}
+
+type PlaygroundProxyRequest_AccessEvaluationBatch struct {
+	AccessEvaluationBatch *v12.AccessEvaluationBatchRequest `protobuf:"bytes,8,opt,name=access_evaluation_batch,json=accessEvaluationBatch,proto3,oneof"`
+}
+
 func (*PlaygroundProxyRequest_CheckResourceSet) isPlaygroundProxyRequest_ProxyRequest() {}
 
 func (*PlaygroundProxyRequest_CheckResourceBatch) isPlaygroundProxyRequest_ProxyRequest() {}
@@ -947,9 +976,13 @@ func (*PlaygroundProxyRequest_PlanResources) isPlaygroundProxyRequest_ProxyReque
 
 func (*PlaygroundProxyRequest_CheckResources) isPlaygroundProxyRequest_ProxyRequest() {}
 
+func (*PlaygroundProxyRequest_AccessEvaluation) isPlaygroundProxyRequest_ProxyRequest() {}
+
+func (*PlaygroundProxyRequest_AccessEvaluationBatch) isPlaygroundProxyRequest_ProxyRequest() {}
+
 type AddOrUpdatePolicyRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Policies      []*v12.Policy          `protobuf:"bytes,1,rep,name=policies,proto3" json:"policies,omitempty"`
+	Policies      []*v13.Policy          `protobuf:"bytes,1,rep,name=policies,proto3" json:"policies,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -984,7 +1017,7 @@ func (*AddOrUpdatePolicyRequest) Descriptor() ([]byte, []int) {
 	return file_cerbos_request_v1_request_proto_rawDescGZIP(), []int{12}
 }
 
-func (x *AddOrUpdatePolicyRequest) GetPolicies() []*v12.Policy {
+func (x *AddOrUpdatePolicyRequest) GetPolicies() []*v13.Policy {
 	if x != nil {
 		return x.Policies
 	}
@@ -1479,7 +1512,7 @@ func (x *InspectPoliciesRequest) GetPolicyId() []string {
 
 type AddOrUpdateSchemaRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Schemas       []*v13.Schema          `protobuf:"bytes,1,rep,name=schemas,proto3" json:"schemas,omitempty"`
+	Schemas       []*v14.Schema          `protobuf:"bytes,1,rep,name=schemas,proto3" json:"schemas,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1514,7 +1547,7 @@ func (*AddOrUpdateSchemaRequest) Descriptor() ([]byte, []int) {
 	return file_cerbos_request_v1_request_proto_rawDescGZIP(), []int{21}
 }
 
-func (x *AddOrUpdateSchemaRequest) GetSchemas() []*v13.Schema {
+func (x *AddOrUpdateSchemaRequest) GetSchemas() []*v14.Schema {
 	if x != nil {
 		return x.Schemas
 	}
@@ -1945,7 +1978,7 @@ var File_cerbos_request_v1_request_proto protoreflect.FileDescriptor
 
 const file_cerbos_request_v1_request_proto_rawDesc = "" +
 	"\n" +
-	"\x1fcerbos/request/v1/request.proto\x12\x11cerbos.request.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1bcerbos/audit/v1/audit.proto\x1a\x1dcerbos/engine/v1/engine.proto\x1a\x1dcerbos/policy/v1/policy.proto\x1a\x1dcerbos/schema/v1/schema.proto\x1a\x1fgoogle/api/field_behavior.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\"\x8f\t\n" +
+	"\x1fcerbos/request/v1/request.proto\x12\x11cerbos.request.v1\x1a)authzen/authorization/v1/evaluation.proto\x1a\x1bbuf/validate/validate.proto\x1a\x1bcerbos/audit/v1/audit.proto\x1a\x1dcerbos/engine/v1/engine.proto\x1a\x1dcerbos/policy/v1/policy.proto\x1a\x1dcerbos/schema/v1/schema.proto\x1a\x1fgoogle/api/field_behavior.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\"\x8f\t\n" +
 	"\x14PlanResourcesRequest\x12\x96\x01\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tBw\x92At2JOptional application-specific ID useful for correlating logs for analysis.J&\"c2db17b8-4f9f-4fb1-acfd-9162a02be42b\"R\trequestId\x12`\n" +
@@ -2039,7 +2072,7 @@ const file_cerbos_request_v1_request_proto_rawDesc = "" +
 	"\bresource\x18\x04 \x01(\v2\x1a.cerbos.engine.v1.ResourceB\t\xe0A\x02\xbaH\x03\xc8\x01\x01R\bresource\x12p\n" +
 	"\aactions\x18\x05 \x03(\tBV\x92A;20List of actions being performed on the resource.\xa0\x012\xa8\x01\x01\xb0\x01\x01\xe0A\x02\xbaH\x12\xc8\x01\x01\x92\x01\f\b\x01\x102\x18\x01\"\x04r\x02\x10\x01R\aactions\x125\n" +
 	"\baux_data\x18\x06 \x01(\v2\x1a.cerbos.request.v1.AuxDataR\aauxData:\"\x92A\x1f\n" +
-	"\x1d2\x1bPlayground evaluate request\"\xb5\x04\n" +
+	"\x1d2\x1bPlayground evaluate request\"\x89\x06\n" +
 	"\x16PlaygroundProxyRequest\x12#\n" +
 	"\rplayground_id\x18\x01 \x01(\tR\fplaygroundId\x12X\n" +
 	"\x05files\x18\x02 \x03(\v2\x17.cerbos.request.v1.FileB)\x92A\x162\x0eList of files.\xa0\x01\x1e\xa8\x01\x01\xe0A\x02\xbaH\n" +
@@ -2047,7 +2080,9 @@ const file_cerbos_request_v1_request_proto_rawDesc = "" +
 	"\x12check_resource_set\x18\x03 \x01(\v2*.cerbos.request.v1.CheckResourceSetRequestH\x00R\x10checkResourceSet\x12`\n" +
 	"\x14check_resource_batch\x18\x04 \x01(\v2,.cerbos.request.v1.CheckResourceBatchRequestH\x00R\x12checkResourceBatch\x12P\n" +
 	"\x0eplan_resources\x18\x05 \x01(\v2'.cerbos.request.v1.PlanResourcesRequestH\x00R\rplanResources\x12S\n" +
-	"\x0fcheck_resources\x18\x06 \x01(\v2(.cerbos.request.v1.CheckResourcesRequestH\x00R\x0echeckResources:\x1f\x92A\x1c\n" +
+	"\x0fcheck_resources\x18\x06 \x01(\v2(.cerbos.request.v1.CheckResourcesRequestH\x00R\x0echeckResources\x12`\n" +
+	"\x11access_evaluation\x18\a \x01(\v21.authzen.authorization.v1.AccessEvaluationRequestH\x00R\x10accessEvaluation\x12p\n" +
+	"\x17access_evaluation_batch\x18\b \x01(\v26.authzen.authorization.v1.AccessEvaluationBatchRequestH\x00R\x15accessEvaluationBatch:\x1f\x92A\x1c\n" +
 	"\x1a2\x18Playground proxy requestB\x16\n" +
 	"\rproxy_request\x12\x05\xbaH\x02\b\x01\"\xa0\x01\n" +
 	"\x18AddOrUpdatePolicyRequest\x12b\n" +
@@ -2176,11 +2211,13 @@ var file_cerbos_request_v1_request_proto_goTypes = []any{
 	(*v1.PlanResourcesInput_Resource)(nil),       // 35: cerbos.engine.v1.PlanResourcesInput.Resource
 	(*v11.RequestContext)(nil),                   // 36: cerbos.audit.v1.RequestContext
 	(*v1.Resource)(nil),                          // 37: cerbos.engine.v1.Resource
-	(*v12.Policy)(nil),                           // 38: cerbos.policy.v1.Policy
-	(*durationpb.Duration)(nil),                  // 39: google.protobuf.Duration
-	(*v13.Schema)(nil),                           // 40: cerbos.schema.v1.Schema
-	(*structpb.Value)(nil),                       // 41: google.protobuf.Value
-	(*timestamppb.Timestamp)(nil),                // 42: google.protobuf.Timestamp
+	(*v12.AccessEvaluationRequest)(nil),          // 38: authzen.authorization.v1.AccessEvaluationRequest
+	(*v12.AccessEvaluationBatchRequest)(nil),     // 39: authzen.authorization.v1.AccessEvaluationBatchRequest
+	(*v13.Policy)(nil),                           // 40: cerbos.policy.v1.Policy
+	(*durationpb.Duration)(nil),                  // 41: google.protobuf.Duration
+	(*v14.Schema)(nil),                           // 42: cerbos.schema.v1.Schema
+	(*structpb.Value)(nil),                       // 43: google.protobuf.Value
+	(*timestamppb.Timestamp)(nil),                // 44: google.protobuf.Timestamp
 }
 var file_cerbos_request_v1_request_proto_depIdxs = []int32{
 	34, // 0: cerbos.request.v1.PlanResourcesRequest.principal:type_name -> cerbos.engine.v1.Principal
@@ -2211,22 +2248,24 @@ var file_cerbos_request_v1_request_proto_depIdxs = []int32{
 	5,  // 25: cerbos.request.v1.PlaygroundProxyRequest.check_resource_batch:type_name -> cerbos.request.v1.CheckResourceBatchRequest
 	1,  // 26: cerbos.request.v1.PlaygroundProxyRequest.plan_resources:type_name -> cerbos.request.v1.PlanResourcesRequest
 	6,  // 27: cerbos.request.v1.PlaygroundProxyRequest.check_resources:type_name -> cerbos.request.v1.CheckResourcesRequest
-	38, // 28: cerbos.request.v1.AddOrUpdatePolicyRequest.policies:type_name -> cerbos.policy.v1.Policy
-	0,  // 29: cerbos.request.v1.ListAuditLogEntriesRequest.kind:type_name -> cerbos.request.v1.ListAuditLogEntriesRequest.Kind
-	33, // 30: cerbos.request.v1.ListAuditLogEntriesRequest.between:type_name -> cerbos.request.v1.ListAuditLogEntriesRequest.TimeRange
-	39, // 31: cerbos.request.v1.ListAuditLogEntriesRequest.since:type_name -> google.protobuf.Duration
-	40, // 32: cerbos.request.v1.AddOrUpdateSchemaRequest.schemas:type_name -> cerbos.schema.v1.Schema
-	4,  // 33: cerbos.request.v1.ResourceSet.InstancesEntry.value:type_name -> cerbos.request.v1.AttributesMap
-	41, // 34: cerbos.request.v1.AttributesMap.AttrEntry.value:type_name -> google.protobuf.Value
-	37, // 35: cerbos.request.v1.CheckResourceBatchRequest.BatchEntry.resource:type_name -> cerbos.engine.v1.Resource
-	37, // 36: cerbos.request.v1.CheckResourcesRequest.ResourceEntry.resource:type_name -> cerbos.engine.v1.Resource
-	42, // 37: cerbos.request.v1.ListAuditLogEntriesRequest.TimeRange.start:type_name -> google.protobuf.Timestamp
-	42, // 38: cerbos.request.v1.ListAuditLogEntriesRequest.TimeRange.end:type_name -> google.protobuf.Timestamp
-	39, // [39:39] is the sub-list for method output_type
-	39, // [39:39] is the sub-list for method input_type
-	39, // [39:39] is the sub-list for extension type_name
-	39, // [39:39] is the sub-list for extension extendee
-	0,  // [0:39] is the sub-list for field type_name
+	38, // 28: cerbos.request.v1.PlaygroundProxyRequest.access_evaluation:type_name -> authzen.authorization.v1.AccessEvaluationRequest
+	39, // 29: cerbos.request.v1.PlaygroundProxyRequest.access_evaluation_batch:type_name -> authzen.authorization.v1.AccessEvaluationBatchRequest
+	40, // 30: cerbos.request.v1.AddOrUpdatePolicyRequest.policies:type_name -> cerbos.policy.v1.Policy
+	0,  // 31: cerbos.request.v1.ListAuditLogEntriesRequest.kind:type_name -> cerbos.request.v1.ListAuditLogEntriesRequest.Kind
+	33, // 32: cerbos.request.v1.ListAuditLogEntriesRequest.between:type_name -> cerbos.request.v1.ListAuditLogEntriesRequest.TimeRange
+	41, // 33: cerbos.request.v1.ListAuditLogEntriesRequest.since:type_name -> google.protobuf.Duration
+	42, // 34: cerbos.request.v1.AddOrUpdateSchemaRequest.schemas:type_name -> cerbos.schema.v1.Schema
+	4,  // 35: cerbos.request.v1.ResourceSet.InstancesEntry.value:type_name -> cerbos.request.v1.AttributesMap
+	43, // 36: cerbos.request.v1.AttributesMap.AttrEntry.value:type_name -> google.protobuf.Value
+	37, // 37: cerbos.request.v1.CheckResourceBatchRequest.BatchEntry.resource:type_name -> cerbos.engine.v1.Resource
+	37, // 38: cerbos.request.v1.CheckResourcesRequest.ResourceEntry.resource:type_name -> cerbos.engine.v1.Resource
+	44, // 39: cerbos.request.v1.ListAuditLogEntriesRequest.TimeRange.start:type_name -> google.protobuf.Timestamp
+	44, // 40: cerbos.request.v1.ListAuditLogEntriesRequest.TimeRange.end:type_name -> google.protobuf.Timestamp
+	41, // [41:41] is the sub-list for method output_type
+	41, // [41:41] is the sub-list for method input_type
+	41, // [41:41] is the sub-list for extension type_name
+	41, // [41:41] is the sub-list for extension extendee
+	0,  // [0:41] is the sub-list for field type_name
 }
 
 func init() { file_cerbos_request_v1_request_proto_init() }
@@ -2241,6 +2280,8 @@ func file_cerbos_request_v1_request_proto_init() {
 		(*PlaygroundProxyRequest_CheckResourceBatch)(nil),
 		(*PlaygroundProxyRequest_PlanResources)(nil),
 		(*PlaygroundProxyRequest_CheckResources)(nil),
+		(*PlaygroundProxyRequest_AccessEvaluation)(nil),
+		(*PlaygroundProxyRequest_AccessEvaluationBatch)(nil),
 	}
 	file_cerbos_request_v1_request_proto_msgTypes[13].OneofWrappers = []any{
 		(*ListAuditLogEntriesRequest_Tail)(nil),

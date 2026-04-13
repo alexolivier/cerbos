@@ -206,6 +206,7 @@ func (cs *CerbosPlaygroundService) PlaygroundProxy(ctx context.Context, req *req
 	}
 
 	cerbosSvc := NewCerbosService(eng, cs.auxData, cs.reqLimits)
+	authzenSvc := NewAuthzenAuthorizationService(eng, cs.auxData, cs.reqLimits)
 	switch proxyReq := req.ProxyRequest.(type) {
 	case *requestv1.PlaygroundProxyRequest_CheckResourceSet:
 		resp, err := cerbosSvc.CheckResourceSet(ctx, proxyReq.CheckResourceSet)
@@ -253,6 +254,32 @@ func (cs *CerbosPlaygroundService) PlaygroundProxy(ctx context.Context, req *req
 			PlaygroundId: req.PlaygroundId,
 			Outcome: &responsev1.PlaygroundProxyResponse_CheckResources{
 				CheckResources: resp,
+			},
+		}, nil
+
+	case *requestv1.PlaygroundProxyRequest_AccessEvaluation:
+		resp, err := authzenSvc.AccessEvaluation(ctx, proxyReq.AccessEvaluation)
+		if err != nil {
+			return nil, err
+		}
+
+		return &responsev1.PlaygroundProxyResponse{
+			PlaygroundId: req.PlaygroundId,
+			Outcome: &responsev1.PlaygroundProxyResponse_AccessEvaluation{
+				AccessEvaluation: resp,
+			},
+		}, nil
+
+	case *requestv1.PlaygroundProxyRequest_AccessEvaluationBatch:
+		resp, err := authzenSvc.AccessEvaluationBatch(ctx, proxyReq.AccessEvaluationBatch)
+		if err != nil {
+			return nil, err
+		}
+
+		return &responsev1.PlaygroundProxyResponse{
+			PlaygroundId: req.PlaygroundId,
+			Outcome: &responsev1.PlaygroundProxyResponse_AccessEvaluationBatch{
+				AccessEvaluationBatch: resp,
 			},
 		}, nil
 

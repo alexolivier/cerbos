@@ -6,10 +6,11 @@ package requestv1
 
 import (
 	fmt "fmt"
+	v12 "github.com/cerbos/cerbos/api/genpb/authzen/authorization/v1"
 	v11 "github.com/cerbos/cerbos/api/genpb/cerbos/audit/v1"
 	v1 "github.com/cerbos/cerbos/api/genpb/cerbos/engine/v1"
-	v12 "github.com/cerbos/cerbos/api/genpb/cerbos/policy/v1"
-	v13 "github.com/cerbos/cerbos/api/genpb/cerbos/schema/v1"
+	v13 "github.com/cerbos/cerbos/api/genpb/cerbos/policy/v1"
+	v14 "github.com/cerbos/cerbos/api/genpb/cerbos/schema/v1"
 	protohelpers "github.com/planetscale/vtprotobuf/protohelpers"
 	durationpb "github.com/planetscale/vtprotobuf/types/known/durationpb"
 	structpb "github.com/planetscale/vtprotobuf/types/known/structpb"
@@ -1237,6 +1238,76 @@ func (m *PlaygroundProxyRequest_CheckResources) MarshalToSizedBufferVT(dAtA []by
 		i = protohelpers.EncodeVarint(dAtA, i, 0)
 		i--
 		dAtA[i] = 0x32
+	}
+	return len(dAtA) - i, nil
+}
+func (m *PlaygroundProxyRequest_AccessEvaluation) MarshalToVT(dAtA []byte) (int, error) {
+	size := m.SizeVT()
+	return m.MarshalToSizedBufferVT(dAtA[:size])
+}
+
+func (m *PlaygroundProxyRequest_AccessEvaluation) MarshalToSizedBufferVT(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.AccessEvaluation != nil {
+		if vtmsg, ok := interface{}(m.AccessEvaluation).(interface {
+			MarshalToSizedBufferVT([]byte) (int, error)
+		}); ok {
+			size, err := vtmsg.MarshalToSizedBufferVT(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		} else {
+			encoded, err := proto.Marshal(m.AccessEvaluation)
+			if err != nil {
+				return 0, err
+			}
+			i -= len(encoded)
+			copy(dAtA[i:], encoded)
+			i = protohelpers.EncodeVarint(dAtA, i, uint64(len(encoded)))
+		}
+		i--
+		dAtA[i] = 0x3a
+	} else {
+		i = protohelpers.EncodeVarint(dAtA, i, 0)
+		i--
+		dAtA[i] = 0x3a
+	}
+	return len(dAtA) - i, nil
+}
+func (m *PlaygroundProxyRequest_AccessEvaluationBatch) MarshalToVT(dAtA []byte) (int, error) {
+	size := m.SizeVT()
+	return m.MarshalToSizedBufferVT(dAtA[:size])
+}
+
+func (m *PlaygroundProxyRequest_AccessEvaluationBatch) MarshalToSizedBufferVT(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.AccessEvaluationBatch != nil {
+		if vtmsg, ok := interface{}(m.AccessEvaluationBatch).(interface {
+			MarshalToSizedBufferVT([]byte) (int, error)
+		}); ok {
+			size, err := vtmsg.MarshalToSizedBufferVT(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		} else {
+			encoded, err := proto.Marshal(m.AccessEvaluationBatch)
+			if err != nil {
+				return 0, err
+			}
+			i -= len(encoded)
+			copy(dAtA[i:], encoded)
+			i = protohelpers.EncodeVarint(dAtA, i, uint64(len(encoded)))
+		}
+		i--
+		dAtA[i] = 0x42
+	} else {
+		i = protohelpers.EncodeVarint(dAtA, i, 0)
+		i--
+		dAtA[i] = 0x42
 	}
 	return len(dAtA) - i, nil
 }
@@ -2577,6 +2648,46 @@ func (m *PlaygroundProxyRequest_CheckResources) SizeVT() (n int) {
 	_ = l
 	if m.CheckResources != nil {
 		l = m.CheckResources.SizeVT()
+		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
+	} else {
+		n += 2
+	}
+	return n
+}
+func (m *PlaygroundProxyRequest_AccessEvaluation) SizeVT() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.AccessEvaluation != nil {
+		if size, ok := interface{}(m.AccessEvaluation).(interface {
+			SizeVT() int
+		}); ok {
+			l = size.SizeVT()
+		} else {
+			l = proto.Size(m.AccessEvaluation)
+		}
+		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
+	} else {
+		n += 2
+	}
+	return n
+}
+func (m *PlaygroundProxyRequest_AccessEvaluationBatch) SizeVT() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.AccessEvaluationBatch != nil {
+		if size, ok := interface{}(m.AccessEvaluationBatch).(interface {
+			SizeVT() int
+		}); ok {
+			l = size.SizeVT()
+		} else {
+			l = proto.Size(m.AccessEvaluationBatch)
+		}
 		n += 1 + l + protohelpers.SizeOfVarint(uint64(l))
 	} else {
 		n += 2
@@ -5751,6 +5862,120 @@ func (m *PlaygroundProxyRequest) UnmarshalVT(dAtA []byte) error {
 				m.ProxyRequest = &PlaygroundProxyRequest_CheckResources{CheckResources: v}
 			}
 			iNdEx = postIndex
+		case 7:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field AccessEvaluation", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if oneof, ok := m.ProxyRequest.(*PlaygroundProxyRequest_AccessEvaluation); ok {
+				if unmarshal, ok := interface{}(oneof.AccessEvaluation).(interface {
+					UnmarshalVT([]byte) error
+				}); ok {
+					if err := unmarshal.UnmarshalVT(dAtA[iNdEx:postIndex]); err != nil {
+						return err
+					}
+				} else {
+					if err := proto.Unmarshal(dAtA[iNdEx:postIndex], oneof.AccessEvaluation); err != nil {
+						return err
+					}
+				}
+			} else {
+				v := &v12.AccessEvaluationRequest{}
+				if unmarshal, ok := interface{}(v).(interface {
+					UnmarshalVT([]byte) error
+				}); ok {
+					if err := unmarshal.UnmarshalVT(dAtA[iNdEx:postIndex]); err != nil {
+						return err
+					}
+				} else {
+					if err := proto.Unmarshal(dAtA[iNdEx:postIndex], v); err != nil {
+						return err
+					}
+				}
+				m.ProxyRequest = &PlaygroundProxyRequest_AccessEvaluation{AccessEvaluation: v}
+			}
+			iNdEx = postIndex
+		case 8:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field AccessEvaluationBatch", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if oneof, ok := m.ProxyRequest.(*PlaygroundProxyRequest_AccessEvaluationBatch); ok {
+				if unmarshal, ok := interface{}(oneof.AccessEvaluationBatch).(interface {
+					UnmarshalVT([]byte) error
+				}); ok {
+					if err := unmarshal.UnmarshalVT(dAtA[iNdEx:postIndex]); err != nil {
+						return err
+					}
+				} else {
+					if err := proto.Unmarshal(dAtA[iNdEx:postIndex], oneof.AccessEvaluationBatch); err != nil {
+						return err
+					}
+				}
+			} else {
+				v := &v12.AccessEvaluationBatchRequest{}
+				if unmarshal, ok := interface{}(v).(interface {
+					UnmarshalVT([]byte) error
+				}); ok {
+					if err := unmarshal.UnmarshalVT(dAtA[iNdEx:postIndex]); err != nil {
+						return err
+					}
+				} else {
+					if err := proto.Unmarshal(dAtA[iNdEx:postIndex], v); err != nil {
+						return err
+					}
+				}
+				m.ProxyRequest = &PlaygroundProxyRequest_AccessEvaluationBatch{AccessEvaluationBatch: v}
+			}
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := protohelpers.Skip(dAtA[iNdEx:])
@@ -5831,7 +6056,7 @@ func (m *AddOrUpdatePolicyRequest) UnmarshalVT(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.Policies = append(m.Policies, &v12.Policy{})
+			m.Policies = append(m.Policies, &v13.Policy{})
 			if unmarshal, ok := interface{}(m.Policies[len(m.Policies)-1]).(interface {
 				UnmarshalVT([]byte) error
 			}); ok {
@@ -7032,7 +7257,7 @@ func (m *AddOrUpdateSchemaRequest) UnmarshalVT(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.Schemas = append(m.Schemas, &v13.Schema{})
+			m.Schemas = append(m.Schemas, &v14.Schema{})
 			if unmarshal, ok := interface{}(m.Schemas[len(m.Schemas)-1]).(interface {
 				UnmarshalVT([]byte) error
 			}); ok {

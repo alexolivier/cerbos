@@ -10,10 +10,11 @@
 package responsev1
 
 import (
-	v12 "github.com/cerbos/cerbos/api/genpb/cerbos/audit/v1"
-	v14 "github.com/cerbos/cerbos/api/genpb/cerbos/effect/v1"
+	v12 "github.com/cerbos/cerbos/api/genpb/authzen/authorization/v1"
+	v13 "github.com/cerbos/cerbos/api/genpb/cerbos/audit/v1"
+	v15 "github.com/cerbos/cerbos/api/genpb/cerbos/effect/v1"
 	v1 "github.com/cerbos/cerbos/api/genpb/cerbos/engine/v1"
-	v13 "github.com/cerbos/cerbos/api/genpb/cerbos/policy/v1"
+	v14 "github.com/cerbos/cerbos/api/genpb/cerbos/policy/v1"
 	v11 "github.com/cerbos/cerbos/api/genpb/cerbos/schema/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
@@ -856,6 +857,8 @@ type PlaygroundProxyResponse struct {
 	//	*PlaygroundProxyResponse_CheckResourceBatch
 	//	*PlaygroundProxyResponse_PlanResources
 	//	*PlaygroundProxyResponse_CheckResources
+	//	*PlaygroundProxyResponse_AccessEvaluation
+	//	*PlaygroundProxyResponse_AccessEvaluationBatch
 	Outcome       isPlaygroundProxyResponse_Outcome `protobuf_oneof:"outcome"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -950,6 +953,24 @@ func (x *PlaygroundProxyResponse) GetCheckResources() *CheckResourcesResponse {
 	return nil
 }
 
+func (x *PlaygroundProxyResponse) GetAccessEvaluation() *v12.AccessEvaluationResponse {
+	if x != nil {
+		if x, ok := x.Outcome.(*PlaygroundProxyResponse_AccessEvaluation); ok {
+			return x.AccessEvaluation
+		}
+	}
+	return nil
+}
+
+func (x *PlaygroundProxyResponse) GetAccessEvaluationBatch() *v12.AccessEvaluationBatchResponse {
+	if x != nil {
+		if x, ok := x.Outcome.(*PlaygroundProxyResponse_AccessEvaluationBatch); ok {
+			return x.AccessEvaluationBatch
+		}
+	}
+	return nil
+}
+
 type isPlaygroundProxyResponse_Outcome interface {
 	isPlaygroundProxyResponse_Outcome()
 }
@@ -974,6 +995,14 @@ type PlaygroundProxyResponse_CheckResources struct {
 	CheckResources *CheckResourcesResponse `protobuf:"bytes,6,opt,name=check_resources,json=checkResources,proto3,oneof"`
 }
 
+type PlaygroundProxyResponse_AccessEvaluation struct {
+	AccessEvaluation *v12.AccessEvaluationResponse `protobuf:"bytes,7,opt,name=access_evaluation,json=accessEvaluation,proto3,oneof"`
+}
+
+type PlaygroundProxyResponse_AccessEvaluationBatch struct {
+	AccessEvaluationBatch *v12.AccessEvaluationBatchResponse `protobuf:"bytes,8,opt,name=access_evaluation_batch,json=accessEvaluationBatch,proto3,oneof"`
+}
+
 func (*PlaygroundProxyResponse_Failure) isPlaygroundProxyResponse_Outcome() {}
 
 func (*PlaygroundProxyResponse_CheckResourceSet) isPlaygroundProxyResponse_Outcome() {}
@@ -983,6 +1012,10 @@ func (*PlaygroundProxyResponse_CheckResourceBatch) isPlaygroundProxyResponse_Out
 func (*PlaygroundProxyResponse_PlanResources) isPlaygroundProxyResponse_Outcome() {}
 
 func (*PlaygroundProxyResponse_CheckResources) isPlaygroundProxyResponse_Outcome() {}
+
+func (*PlaygroundProxyResponse_AccessEvaluation) isPlaygroundProxyResponse_Outcome() {}
+
+func (*PlaygroundProxyResponse_AccessEvaluationBatch) isPlaygroundProxyResponse_Outcome() {}
 
 type AddOrUpdatePolicyResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1076,7 +1109,7 @@ func (x *ListAuditLogEntriesResponse) GetEntry() isListAuditLogEntriesResponse_E
 	return nil
 }
 
-func (x *ListAuditLogEntriesResponse) GetAccessLogEntry() *v12.AccessLogEntry {
+func (x *ListAuditLogEntriesResponse) GetAccessLogEntry() *v13.AccessLogEntry {
 	if x != nil {
 		if x, ok := x.Entry.(*ListAuditLogEntriesResponse_AccessLogEntry); ok {
 			return x.AccessLogEntry
@@ -1085,7 +1118,7 @@ func (x *ListAuditLogEntriesResponse) GetAccessLogEntry() *v12.AccessLogEntry {
 	return nil
 }
 
-func (x *ListAuditLogEntriesResponse) GetDecisionLogEntry() *v12.DecisionLogEntry {
+func (x *ListAuditLogEntriesResponse) GetDecisionLogEntry() *v13.DecisionLogEntry {
 	if x != nil {
 		if x, ok := x.Entry.(*ListAuditLogEntriesResponse_DecisionLogEntry); ok {
 			return x.DecisionLogEntry
@@ -1099,11 +1132,11 @@ type isListAuditLogEntriesResponse_Entry interface {
 }
 
 type ListAuditLogEntriesResponse_AccessLogEntry struct {
-	AccessLogEntry *v12.AccessLogEntry `protobuf:"bytes,1,opt,name=access_log_entry,json=accessLogEntry,proto3,oneof"`
+	AccessLogEntry *v13.AccessLogEntry `protobuf:"bytes,1,opt,name=access_log_entry,json=accessLogEntry,proto3,oneof"`
 }
 
 type ListAuditLogEntriesResponse_DecisionLogEntry struct {
-	DecisionLogEntry *v12.DecisionLogEntry `protobuf:"bytes,2,opt,name=decision_log_entry,json=decisionLogEntry,proto3,oneof"`
+	DecisionLogEntry *v13.DecisionLogEntry `protobuf:"bytes,2,opt,name=decision_log_entry,json=decisionLogEntry,proto3,oneof"`
 }
 
 func (*ListAuditLogEntriesResponse_AccessLogEntry) isListAuditLogEntriesResponse_Entry() {}
@@ -1216,7 +1249,7 @@ func (x *ListPoliciesResponse) GetPolicyIds() []string {
 
 type GetPolicyResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Policies      []*v13.Policy          `protobuf:"bytes,1,rep,name=policies,proto3" json:"policies,omitempty"`
+	Policies      []*v14.Policy          `protobuf:"bytes,1,rep,name=policies,proto3" json:"policies,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1251,7 +1284,7 @@ func (*GetPolicyResponse) Descriptor() ([]byte, []int) {
 	return file_cerbos_response_v1_response_proto_rawDescGZIP(), []int{13}
 }
 
-func (x *GetPolicyResponse) GetPolicies() []*v13.Policy {
+func (x *GetPolicyResponse) GetPolicies() []*v14.Policy {
 	if x != nil {
 		return x.Policies
 	}
@@ -1886,7 +1919,7 @@ func (x *PlanResourcesResponse_Meta) GetMatchedScopes() map[string]string {
 
 type CheckResourceSetResponse_ActionEffectMap struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
-	Actions          map[string]v14.Effect  `protobuf:"bytes,1,rep,name=actions,proto3" json:"actions,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value,enum=cerbos.effect.v1.Effect"`
+	Actions          map[string]v15.Effect  `protobuf:"bytes,1,rep,name=actions,proto3" json:"actions,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value,enum=cerbos.effect.v1.Effect"`
 	ValidationErrors []*v11.ValidationError `protobuf:"bytes,2,rep,name=validation_errors,json=validationErrors,proto3" json:"validation_errors,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
@@ -1922,7 +1955,7 @@ func (*CheckResourceSetResponse_ActionEffectMap) Descriptor() ([]byte, []int) {
 	return file_cerbos_response_v1_response_proto_rawDescGZIP(), []int{1, 0}
 }
 
-func (x *CheckResourceSetResponse_ActionEffectMap) GetActions() map[string]v14.Effect {
+func (x *CheckResourceSetResponse_ActionEffectMap) GetActions() map[string]v15.Effect {
 	if x != nil {
 		return x.Actions
 	}
@@ -2087,7 +2120,7 @@ func (x *CheckResourceSetResponse_Meta_ActionMeta) GetEffectiveDerivedRoles() []
 type CheckResourceBatchResponse_ActionEffectMap struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	ResourceId       string                 `protobuf:"bytes,1,opt,name=resource_id,json=resourceId,proto3" json:"resource_id,omitempty"`
-	Actions          map[string]v14.Effect  `protobuf:"bytes,2,rep,name=actions,proto3" json:"actions,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value,enum=cerbos.effect.v1.Effect"`
+	Actions          map[string]v15.Effect  `protobuf:"bytes,2,rep,name=actions,proto3" json:"actions,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value,enum=cerbos.effect.v1.Effect"`
 	ValidationErrors []*v11.ValidationError `protobuf:"bytes,3,rep,name=validation_errors,json=validationErrors,proto3" json:"validation_errors,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
@@ -2130,7 +2163,7 @@ func (x *CheckResourceBatchResponse_ActionEffectMap) GetResourceId() string {
 	return ""
 }
 
-func (x *CheckResourceBatchResponse_ActionEffectMap) GetActions() map[string]v14.Effect {
+func (x *CheckResourceBatchResponse_ActionEffectMap) GetActions() map[string]v15.Effect {
 	if x != nil {
 		return x.Actions
 	}
@@ -2147,7 +2180,7 @@ func (x *CheckResourceBatchResponse_ActionEffectMap) GetValidationErrors() []*v1
 type CheckResourcesResponse_ResultEntry struct {
 	state            protoimpl.MessageState                       `protogen:"open.v1"`
 	Resource         *CheckResourcesResponse_ResultEntry_Resource `protobuf:"bytes,1,opt,name=resource,proto3" json:"resource,omitempty"`
-	Actions          map[string]v14.Effect                        `protobuf:"bytes,2,rep,name=actions,proto3" json:"actions,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value,enum=cerbos.effect.v1.Effect"`
+	Actions          map[string]v15.Effect                        `protobuf:"bytes,2,rep,name=actions,proto3" json:"actions,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value,enum=cerbos.effect.v1.Effect"`
 	ValidationErrors []*v11.ValidationError                       `protobuf:"bytes,3,rep,name=validation_errors,json=validationErrors,proto3" json:"validation_errors,omitempty"`
 	Meta             *CheckResourcesResponse_ResultEntry_Meta     `protobuf:"bytes,4,opt,name=meta,proto3" json:"meta,omitempty"`
 	Outputs          []*v1.OutputEntry                            `protobuf:"bytes,5,rep,name=outputs,proto3" json:"outputs,omitempty"`
@@ -2192,7 +2225,7 @@ func (x *CheckResourcesResponse_ResultEntry) GetResource() *CheckResourcesRespon
 	return nil
 }
 
-func (x *CheckResourcesResponse_ResultEntry) GetActions() map[string]v14.Effect {
+func (x *CheckResourcesResponse_ResultEntry) GetActions() map[string]v15.Effect {
 	if x != nil {
 		return x.Actions
 	}
@@ -2514,7 +2547,7 @@ func (x *PlaygroundFailure_Error) GetDetails() *PlaygroundFailure_ErrorDetails {
 
 type PlaygroundTestResponse_TestResults struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Results       *v13.TestResults       `protobuf:"bytes,1,opt,name=results,proto3" json:"results,omitempty"`
+	Results       *v14.TestResults       `protobuf:"bytes,1,opt,name=results,proto3" json:"results,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2549,7 +2582,7 @@ func (*PlaygroundTestResponse_TestResults) Descriptor() ([]byte, []int) {
 	return file_cerbos_response_v1_response_proto_rawDescGZIP(), []int{6, 0}
 }
 
-func (x *PlaygroundTestResponse_TestResults) GetResults() *v13.TestResults {
+func (x *PlaygroundTestResponse_TestResults) GetResults() *v14.TestResults {
 	if x != nil {
 		return x.Results
 	}
@@ -2559,7 +2592,7 @@ func (x *PlaygroundTestResponse_TestResults) GetResults() *v13.TestResults {
 type PlaygroundEvaluateResponse_EvalResult struct {
 	state  protoimpl.MessageState `protogen:"open.v1"`
 	Action string                 `protobuf:"bytes,1,opt,name=action,proto3" json:"action,omitempty"`
-	Effect v14.Effect             `protobuf:"varint,2,opt,name=effect,proto3,enum=cerbos.effect.v1.Effect" json:"effect,omitempty"`
+	Effect v15.Effect             `protobuf:"varint,2,opt,name=effect,proto3,enum=cerbos.effect.v1.Effect" json:"effect,omitempty"`
 	Policy string                 `protobuf:"bytes,3,opt,name=policy,proto3" json:"policy,omitempty"`
 	// Deprecated: Marked as deprecated in cerbos/response/v1/response.proto.
 	EffectiveDerivedRoles []string `protobuf:"bytes,4,rep,name=effective_derived_roles,json=effectiveDerivedRoles,proto3" json:"effective_derived_roles,omitempty"`
@@ -2606,11 +2639,11 @@ func (x *PlaygroundEvaluateResponse_EvalResult) GetAction() string {
 	return ""
 }
 
-func (x *PlaygroundEvaluateResponse_EvalResult) GetEffect() v14.Effect {
+func (x *PlaygroundEvaluateResponse_EvalResult) GetEffect() v15.Effect {
 	if x != nil {
 		return x.Effect
 	}
-	return v14.Effect(0)
+	return v15.Effect(0)
 }
 
 func (x *PlaygroundEvaluateResponse_EvalResult) GetPolicy() string {
@@ -3144,7 +3177,7 @@ var File_cerbos_response_v1_response_proto protoreflect.FileDescriptor
 
 const file_cerbos_response_v1_response_proto_rawDesc = "" +
 	"\n" +
-	"!cerbos/response/v1/response.proto\x12\x12cerbos.response.v1\x1a\x1bcerbos/audit/v1/audit.proto\x1a\x1dcerbos/effect/v1/effect.proto\x1a\x1dcerbos/engine/v1/engine.proto\x1a\x1dcerbos/policy/v1/policy.proto\x1a\x1dcerbos/schema/v1/schema.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\"\x91\n" +
+	"!cerbos/response/v1/response.proto\x12\x12cerbos.response.v1\x1a)authzen/authorization/v1/evaluation.proto\x1a\x1bcerbos/audit/v1/audit.proto\x1a\x1dcerbos/effect/v1/effect.proto\x1a\x1dcerbos/engine/v1/engine.proto\x1a\x1dcerbos/policy/v1/policy.proto\x1a\x1dcerbos/schema/v1/schema.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\"\x91\n" +
 	"\n" +
 	"\x15PlanResourcesResponse\x12o\n" +
 	"\n" +
@@ -3287,14 +3320,16 @@ const file_cerbos_response_v1_response_proto_rawDesc = "" +
 	"\x11validation_errors\x18\x03 \x03(\v2!.cerbos.schema.v1.ValidationErrorR\x10validationErrors\x127\n" +
 	"\aoutputs\x18\x04 \x03(\v2\x1d.cerbos.engine.v1.OutputEntryR\aoutputs:#\x92A \n" +
 	"\x1e2\x1cPlayground evaluate responseB\t\n" +
-	"\aoutcome\"\x9b\x04\n" +
+	"\aoutcome\"\xf1\x05\n" +
 	"\x17PlaygroundProxyResponse\x12#\n" +
 	"\rplayground_id\x18\x01 \x01(\tR\fplaygroundId\x12A\n" +
 	"\afailure\x18\x02 \x01(\v2%.cerbos.response.v1.PlaygroundFailureH\x00R\afailure\x12\\\n" +
 	"\x12check_resource_set\x18\x03 \x01(\v2,.cerbos.response.v1.CheckResourceSetResponseH\x00R\x10checkResourceSet\x12b\n" +
 	"\x14check_resource_batch\x18\x04 \x01(\v2..cerbos.response.v1.CheckResourceBatchResponseH\x00R\x12checkResourceBatch\x12R\n" +
 	"\x0eplan_resources\x18\x05 \x01(\v2).cerbos.response.v1.PlanResourcesResponseH\x00R\rplanResources\x12U\n" +
-	"\x0fcheck_resources\x18\x06 \x01(\v2*.cerbos.response.v1.CheckResourcesResponseH\x00R\x0echeckResources: \x92A\x1d\n" +
+	"\x0fcheck_resources\x18\x06 \x01(\v2*.cerbos.response.v1.CheckResourcesResponseH\x00R\x0echeckResources\x12a\n" +
+	"\x11access_evaluation\x18\a \x01(\v22.authzen.authorization.v1.AccessEvaluationResponseH\x00R\x10accessEvaluation\x12q\n" +
+	"\x17access_evaluation_batch\x18\b \x01(\v27.authzen.authorization.v1.AccessEvaluationBatchResponseH\x00R\x15accessEvaluationBatch: \x92A\x1d\n" +
 	"\x1b2\x19Playground proxy responseB\t\n" +
 	"\aoutcome\"p\n" +
 	"\x19AddOrUpdatePolicyResponse\x120\n" +
@@ -3506,14 +3541,16 @@ var file_cerbos_response_v1_response_proto_goTypes = []any{
 	(*v1.PlanResourcesFilter)(nil),                  // 64: cerbos.engine.v1.PlanResourcesFilter
 	(*v11.ValidationError)(nil),                     // 65: cerbos.schema.v1.ValidationError
 	(*emptypb.Empty)(nil),                           // 66: google.protobuf.Empty
-	(*v12.AccessLogEntry)(nil),                      // 67: cerbos.audit.v1.AccessLogEntry
-	(*v12.DecisionLogEntry)(nil),                    // 68: cerbos.audit.v1.DecisionLogEntry
-	(*v13.Policy)(nil),                              // 69: cerbos.policy.v1.Policy
-	(*v11.Schema)(nil),                              // 70: cerbos.schema.v1.Schema
-	(v14.Effect)(0),                                 // 71: cerbos.effect.v1.Effect
-	(*v1.OutputEntry)(nil),                          // 72: cerbos.engine.v1.OutputEntry
-	(*v13.TestResults)(nil),                         // 73: cerbos.policy.v1.TestResults
-	(*structpb.Value)(nil),                          // 74: google.protobuf.Value
+	(*v12.AccessEvaluationResponse)(nil),            // 67: authzen.authorization.v1.AccessEvaluationResponse
+	(*v12.AccessEvaluationBatchResponse)(nil),       // 68: authzen.authorization.v1.AccessEvaluationBatchResponse
+	(*v13.AccessLogEntry)(nil),                      // 69: cerbos.audit.v1.AccessLogEntry
+	(*v13.DecisionLogEntry)(nil),                    // 70: cerbos.audit.v1.DecisionLogEntry
+	(*v14.Policy)(nil),                              // 71: cerbos.policy.v1.Policy
+	(*v11.Schema)(nil),                              // 72: cerbos.schema.v1.Schema
+	(v15.Effect)(0),                                 // 73: cerbos.effect.v1.Effect
+	(*v1.OutputEntry)(nil),                          // 74: cerbos.engine.v1.OutputEntry
+	(*v14.TestResults)(nil),                         // 75: cerbos.policy.v1.TestResults
+	(*structpb.Value)(nil),                          // 76: google.protobuf.Value
 }
 var file_cerbos_response_v1_response_proto_depIdxs = []int32{
 	64, // 0: cerbos.response.v1.PlanResourcesResponse.filter:type_name -> cerbos.engine.v1.PlanResourcesFilter
@@ -3535,60 +3572,62 @@ var file_cerbos_response_v1_response_proto_depIdxs = []int32{
 	6,  // 16: cerbos.response.v1.PlaygroundProxyResponse.check_resource_batch:type_name -> cerbos.response.v1.CheckResourceBatchResponse
 	4,  // 17: cerbos.response.v1.PlaygroundProxyResponse.plan_resources:type_name -> cerbos.response.v1.PlanResourcesResponse
 	7,  // 18: cerbos.response.v1.PlaygroundProxyResponse.check_resources:type_name -> cerbos.response.v1.CheckResourcesResponse
-	66, // 19: cerbos.response.v1.AddOrUpdatePolicyResponse.success:type_name -> google.protobuf.Empty
-	67, // 20: cerbos.response.v1.ListAuditLogEntriesResponse.access_log_entry:type_name -> cerbos.audit.v1.AccessLogEntry
-	68, // 21: cerbos.response.v1.ListAuditLogEntriesResponse.decision_log_entry:type_name -> cerbos.audit.v1.DecisionLogEntry
-	69, // 22: cerbos.response.v1.GetPolicyResponse.policies:type_name -> cerbos.policy.v1.Policy
-	54, // 23: cerbos.response.v1.DeletePolicyErrorDetails.errors:type_name -> cerbos.response.v1.DeletePolicyErrorDetails.ErrorsEntry
-	55, // 24: cerbos.response.v1.DisablePolicyErrorDetails.errors:type_name -> cerbos.response.v1.DisablePolicyErrorDetails.ErrorsEntry
-	56, // 25: cerbos.response.v1.IntegrityErrors.breaks_scope_chain:type_name -> cerbos.response.v1.IntegrityErrors.BreaksScopeChain
-	57, // 26: cerbos.response.v1.IntegrityErrors.required_by_other_policies:type_name -> cerbos.response.v1.IntegrityErrors.RequiredByOtherPolicies
-	63, // 27: cerbos.response.v1.InspectPoliciesResponse.results:type_name -> cerbos.response.v1.InspectPoliciesResponse.ResultsEntry
-	70, // 28: cerbos.response.v1.GetSchemaResponse.schemas:type_name -> cerbos.schema.v1.Schema
-	32, // 29: cerbos.response.v1.PlanResourcesResponse.Meta.matched_scopes:type_name -> cerbos.response.v1.PlanResourcesResponse.Meta.MatchedScopesEntry
-	36, // 30: cerbos.response.v1.CheckResourceSetResponse.ActionEffectMap.actions:type_name -> cerbos.response.v1.CheckResourceSetResponse.ActionEffectMap.ActionsEntry
-	65, // 31: cerbos.response.v1.CheckResourceSetResponse.ActionEffectMap.validation_errors:type_name -> cerbos.schema.v1.ValidationError
-	39, // 32: cerbos.response.v1.CheckResourceSetResponse.Meta.resource_instances:type_name -> cerbos.response.v1.CheckResourceSetResponse.Meta.ResourceInstancesEntry
-	33, // 33: cerbos.response.v1.CheckResourceSetResponse.ResourceInstancesEntry.value:type_name -> cerbos.response.v1.CheckResourceSetResponse.ActionEffectMap
-	71, // 34: cerbos.response.v1.CheckResourceSetResponse.ActionEffectMap.ActionsEntry.value:type_name -> cerbos.effect.v1.Effect
-	40, // 35: cerbos.response.v1.CheckResourceSetResponse.Meta.ActionMeta.actions:type_name -> cerbos.response.v1.CheckResourceSetResponse.Meta.ActionMeta.ActionsEntry
-	38, // 36: cerbos.response.v1.CheckResourceSetResponse.Meta.ResourceInstancesEntry.value:type_name -> cerbos.response.v1.CheckResourceSetResponse.Meta.ActionMeta
-	37, // 37: cerbos.response.v1.CheckResourceSetResponse.Meta.ActionMeta.ActionsEntry.value:type_name -> cerbos.response.v1.CheckResourceSetResponse.Meta.EffectMeta
-	42, // 38: cerbos.response.v1.CheckResourceBatchResponse.ActionEffectMap.actions:type_name -> cerbos.response.v1.CheckResourceBatchResponse.ActionEffectMap.ActionsEntry
-	65, // 39: cerbos.response.v1.CheckResourceBatchResponse.ActionEffectMap.validation_errors:type_name -> cerbos.schema.v1.ValidationError
-	71, // 40: cerbos.response.v1.CheckResourceBatchResponse.ActionEffectMap.ActionsEntry.value:type_name -> cerbos.effect.v1.Effect
-	44, // 41: cerbos.response.v1.CheckResourcesResponse.ResultEntry.resource:type_name -> cerbos.response.v1.CheckResourcesResponse.ResultEntry.Resource
-	46, // 42: cerbos.response.v1.CheckResourcesResponse.ResultEntry.actions:type_name -> cerbos.response.v1.CheckResourcesResponse.ResultEntry.ActionsEntry
-	65, // 43: cerbos.response.v1.CheckResourcesResponse.ResultEntry.validation_errors:type_name -> cerbos.schema.v1.ValidationError
-	45, // 44: cerbos.response.v1.CheckResourcesResponse.ResultEntry.meta:type_name -> cerbos.response.v1.CheckResourcesResponse.ResultEntry.Meta
-	72, // 45: cerbos.response.v1.CheckResourcesResponse.ResultEntry.outputs:type_name -> cerbos.engine.v1.OutputEntry
-	48, // 46: cerbos.response.v1.CheckResourcesResponse.ResultEntry.Meta.actions:type_name -> cerbos.response.v1.CheckResourcesResponse.ResultEntry.Meta.ActionsEntry
-	71, // 47: cerbos.response.v1.CheckResourcesResponse.ResultEntry.ActionsEntry.value:type_name -> cerbos.effect.v1.Effect
-	47, // 48: cerbos.response.v1.CheckResourcesResponse.ResultEntry.Meta.ActionsEntry.value:type_name -> cerbos.response.v1.CheckResourcesResponse.ResultEntry.Meta.EffectMeta
-	49, // 49: cerbos.response.v1.PlaygroundFailure.Error.details:type_name -> cerbos.response.v1.PlaygroundFailure.ErrorDetails
-	73, // 50: cerbos.response.v1.PlaygroundTestResponse.TestResults.results:type_name -> cerbos.policy.v1.TestResults
-	71, // 51: cerbos.response.v1.PlaygroundEvaluateResponse.EvalResult.effect:type_name -> cerbos.effect.v1.Effect
-	65, // 52: cerbos.response.v1.PlaygroundEvaluateResponse.EvalResult.validation_errors:type_name -> cerbos.schema.v1.ValidationError
-	52, // 53: cerbos.response.v1.PlaygroundEvaluateResponse.EvalResultList.results:type_name -> cerbos.response.v1.PlaygroundEvaluateResponse.EvalResult
-	65, // 54: cerbos.response.v1.PlaygroundEvaluateResponse.EvalResultList.validation_errors:type_name -> cerbos.schema.v1.ValidationError
-	72, // 55: cerbos.response.v1.PlaygroundEvaluateResponse.EvalResultList.outputs:type_name -> cerbos.engine.v1.OutputEntry
-	22, // 56: cerbos.response.v1.DeletePolicyErrorDetails.ErrorsEntry.value:type_name -> cerbos.response.v1.IntegrityErrors
-	22, // 57: cerbos.response.v1.DisablePolicyErrorDetails.ErrorsEntry.value:type_name -> cerbos.response.v1.IntegrityErrors
-	0,  // 58: cerbos.response.v1.InspectPoliciesResponse.Attribute.kind:type_name -> cerbos.response.v1.InspectPoliciesResponse.Attribute.Kind
-	1,  // 59: cerbos.response.v1.InspectPoliciesResponse.DerivedRole.kind:type_name -> cerbos.response.v1.InspectPoliciesResponse.DerivedRole.Kind
-	74, // 60: cerbos.response.v1.InspectPoliciesResponse.Constant.value:type_name -> google.protobuf.Value
-	2,  // 61: cerbos.response.v1.InspectPoliciesResponse.Constant.kind:type_name -> cerbos.response.v1.InspectPoliciesResponse.Constant.Kind
-	3,  // 62: cerbos.response.v1.InspectPoliciesResponse.Variable.kind:type_name -> cerbos.response.v1.InspectPoliciesResponse.Variable.Kind
-	61, // 63: cerbos.response.v1.InspectPoliciesResponse.Result.variables:type_name -> cerbos.response.v1.InspectPoliciesResponse.Variable
-	59, // 64: cerbos.response.v1.InspectPoliciesResponse.Result.derived_roles:type_name -> cerbos.response.v1.InspectPoliciesResponse.DerivedRole
-	58, // 65: cerbos.response.v1.InspectPoliciesResponse.Result.attributes:type_name -> cerbos.response.v1.InspectPoliciesResponse.Attribute
-	60, // 66: cerbos.response.v1.InspectPoliciesResponse.Result.constants:type_name -> cerbos.response.v1.InspectPoliciesResponse.Constant
-	62, // 67: cerbos.response.v1.InspectPoliciesResponse.ResultsEntry.value:type_name -> cerbos.response.v1.InspectPoliciesResponse.Result
-	68, // [68:68] is the sub-list for method output_type
-	68, // [68:68] is the sub-list for method input_type
-	68, // [68:68] is the sub-list for extension type_name
-	68, // [68:68] is the sub-list for extension extendee
-	0,  // [0:68] is the sub-list for field type_name
+	67, // 19: cerbos.response.v1.PlaygroundProxyResponse.access_evaluation:type_name -> authzen.authorization.v1.AccessEvaluationResponse
+	68, // 20: cerbos.response.v1.PlaygroundProxyResponse.access_evaluation_batch:type_name -> authzen.authorization.v1.AccessEvaluationBatchResponse
+	66, // 21: cerbos.response.v1.AddOrUpdatePolicyResponse.success:type_name -> google.protobuf.Empty
+	69, // 22: cerbos.response.v1.ListAuditLogEntriesResponse.access_log_entry:type_name -> cerbos.audit.v1.AccessLogEntry
+	70, // 23: cerbos.response.v1.ListAuditLogEntriesResponse.decision_log_entry:type_name -> cerbos.audit.v1.DecisionLogEntry
+	71, // 24: cerbos.response.v1.GetPolicyResponse.policies:type_name -> cerbos.policy.v1.Policy
+	54, // 25: cerbos.response.v1.DeletePolicyErrorDetails.errors:type_name -> cerbos.response.v1.DeletePolicyErrorDetails.ErrorsEntry
+	55, // 26: cerbos.response.v1.DisablePolicyErrorDetails.errors:type_name -> cerbos.response.v1.DisablePolicyErrorDetails.ErrorsEntry
+	56, // 27: cerbos.response.v1.IntegrityErrors.breaks_scope_chain:type_name -> cerbos.response.v1.IntegrityErrors.BreaksScopeChain
+	57, // 28: cerbos.response.v1.IntegrityErrors.required_by_other_policies:type_name -> cerbos.response.v1.IntegrityErrors.RequiredByOtherPolicies
+	63, // 29: cerbos.response.v1.InspectPoliciesResponse.results:type_name -> cerbos.response.v1.InspectPoliciesResponse.ResultsEntry
+	72, // 30: cerbos.response.v1.GetSchemaResponse.schemas:type_name -> cerbos.schema.v1.Schema
+	32, // 31: cerbos.response.v1.PlanResourcesResponse.Meta.matched_scopes:type_name -> cerbos.response.v1.PlanResourcesResponse.Meta.MatchedScopesEntry
+	36, // 32: cerbos.response.v1.CheckResourceSetResponse.ActionEffectMap.actions:type_name -> cerbos.response.v1.CheckResourceSetResponse.ActionEffectMap.ActionsEntry
+	65, // 33: cerbos.response.v1.CheckResourceSetResponse.ActionEffectMap.validation_errors:type_name -> cerbos.schema.v1.ValidationError
+	39, // 34: cerbos.response.v1.CheckResourceSetResponse.Meta.resource_instances:type_name -> cerbos.response.v1.CheckResourceSetResponse.Meta.ResourceInstancesEntry
+	33, // 35: cerbos.response.v1.CheckResourceSetResponse.ResourceInstancesEntry.value:type_name -> cerbos.response.v1.CheckResourceSetResponse.ActionEffectMap
+	73, // 36: cerbos.response.v1.CheckResourceSetResponse.ActionEffectMap.ActionsEntry.value:type_name -> cerbos.effect.v1.Effect
+	40, // 37: cerbos.response.v1.CheckResourceSetResponse.Meta.ActionMeta.actions:type_name -> cerbos.response.v1.CheckResourceSetResponse.Meta.ActionMeta.ActionsEntry
+	38, // 38: cerbos.response.v1.CheckResourceSetResponse.Meta.ResourceInstancesEntry.value:type_name -> cerbos.response.v1.CheckResourceSetResponse.Meta.ActionMeta
+	37, // 39: cerbos.response.v1.CheckResourceSetResponse.Meta.ActionMeta.ActionsEntry.value:type_name -> cerbos.response.v1.CheckResourceSetResponse.Meta.EffectMeta
+	42, // 40: cerbos.response.v1.CheckResourceBatchResponse.ActionEffectMap.actions:type_name -> cerbos.response.v1.CheckResourceBatchResponse.ActionEffectMap.ActionsEntry
+	65, // 41: cerbos.response.v1.CheckResourceBatchResponse.ActionEffectMap.validation_errors:type_name -> cerbos.schema.v1.ValidationError
+	73, // 42: cerbos.response.v1.CheckResourceBatchResponse.ActionEffectMap.ActionsEntry.value:type_name -> cerbos.effect.v1.Effect
+	44, // 43: cerbos.response.v1.CheckResourcesResponse.ResultEntry.resource:type_name -> cerbos.response.v1.CheckResourcesResponse.ResultEntry.Resource
+	46, // 44: cerbos.response.v1.CheckResourcesResponse.ResultEntry.actions:type_name -> cerbos.response.v1.CheckResourcesResponse.ResultEntry.ActionsEntry
+	65, // 45: cerbos.response.v1.CheckResourcesResponse.ResultEntry.validation_errors:type_name -> cerbos.schema.v1.ValidationError
+	45, // 46: cerbos.response.v1.CheckResourcesResponse.ResultEntry.meta:type_name -> cerbos.response.v1.CheckResourcesResponse.ResultEntry.Meta
+	74, // 47: cerbos.response.v1.CheckResourcesResponse.ResultEntry.outputs:type_name -> cerbos.engine.v1.OutputEntry
+	48, // 48: cerbos.response.v1.CheckResourcesResponse.ResultEntry.Meta.actions:type_name -> cerbos.response.v1.CheckResourcesResponse.ResultEntry.Meta.ActionsEntry
+	73, // 49: cerbos.response.v1.CheckResourcesResponse.ResultEntry.ActionsEntry.value:type_name -> cerbos.effect.v1.Effect
+	47, // 50: cerbos.response.v1.CheckResourcesResponse.ResultEntry.Meta.ActionsEntry.value:type_name -> cerbos.response.v1.CheckResourcesResponse.ResultEntry.Meta.EffectMeta
+	49, // 51: cerbos.response.v1.PlaygroundFailure.Error.details:type_name -> cerbos.response.v1.PlaygroundFailure.ErrorDetails
+	75, // 52: cerbos.response.v1.PlaygroundTestResponse.TestResults.results:type_name -> cerbos.policy.v1.TestResults
+	73, // 53: cerbos.response.v1.PlaygroundEvaluateResponse.EvalResult.effect:type_name -> cerbos.effect.v1.Effect
+	65, // 54: cerbos.response.v1.PlaygroundEvaluateResponse.EvalResult.validation_errors:type_name -> cerbos.schema.v1.ValidationError
+	52, // 55: cerbos.response.v1.PlaygroundEvaluateResponse.EvalResultList.results:type_name -> cerbos.response.v1.PlaygroundEvaluateResponse.EvalResult
+	65, // 56: cerbos.response.v1.PlaygroundEvaluateResponse.EvalResultList.validation_errors:type_name -> cerbos.schema.v1.ValidationError
+	74, // 57: cerbos.response.v1.PlaygroundEvaluateResponse.EvalResultList.outputs:type_name -> cerbos.engine.v1.OutputEntry
+	22, // 58: cerbos.response.v1.DeletePolicyErrorDetails.ErrorsEntry.value:type_name -> cerbos.response.v1.IntegrityErrors
+	22, // 59: cerbos.response.v1.DisablePolicyErrorDetails.ErrorsEntry.value:type_name -> cerbos.response.v1.IntegrityErrors
+	0,  // 60: cerbos.response.v1.InspectPoliciesResponse.Attribute.kind:type_name -> cerbos.response.v1.InspectPoliciesResponse.Attribute.Kind
+	1,  // 61: cerbos.response.v1.InspectPoliciesResponse.DerivedRole.kind:type_name -> cerbos.response.v1.InspectPoliciesResponse.DerivedRole.Kind
+	76, // 62: cerbos.response.v1.InspectPoliciesResponse.Constant.value:type_name -> google.protobuf.Value
+	2,  // 63: cerbos.response.v1.InspectPoliciesResponse.Constant.kind:type_name -> cerbos.response.v1.InspectPoliciesResponse.Constant.Kind
+	3,  // 64: cerbos.response.v1.InspectPoliciesResponse.Variable.kind:type_name -> cerbos.response.v1.InspectPoliciesResponse.Variable.Kind
+	61, // 65: cerbos.response.v1.InspectPoliciesResponse.Result.variables:type_name -> cerbos.response.v1.InspectPoliciesResponse.Variable
+	59, // 66: cerbos.response.v1.InspectPoliciesResponse.Result.derived_roles:type_name -> cerbos.response.v1.InspectPoliciesResponse.DerivedRole
+	58, // 67: cerbos.response.v1.InspectPoliciesResponse.Result.attributes:type_name -> cerbos.response.v1.InspectPoliciesResponse.Attribute
+	60, // 68: cerbos.response.v1.InspectPoliciesResponse.Result.constants:type_name -> cerbos.response.v1.InspectPoliciesResponse.Constant
+	62, // 69: cerbos.response.v1.InspectPoliciesResponse.ResultsEntry.value:type_name -> cerbos.response.v1.InspectPoliciesResponse.Result
+	70, // [70:70] is the sub-list for method output_type
+	70, // [70:70] is the sub-list for method input_type
+	70, // [70:70] is the sub-list for extension type_name
+	70, // [70:70] is the sub-list for extension extendee
+	0,  // [0:70] is the sub-list for field type_name
 }
 
 func init() { file_cerbos_response_v1_response_proto_init() }
@@ -3614,6 +3653,8 @@ func file_cerbos_response_v1_response_proto_init() {
 		(*PlaygroundProxyResponse_CheckResourceBatch)(nil),
 		(*PlaygroundProxyResponse_PlanResources)(nil),
 		(*PlaygroundProxyResponse_CheckResources)(nil),
+		(*PlaygroundProxyResponse_AccessEvaluation)(nil),
+		(*PlaygroundProxyResponse_AccessEvaluationBatch)(nil),
 	}
 	file_cerbos_response_v1_response_proto_msgTypes[10].OneofWrappers = []any{
 		(*ListAuditLogEntriesResponse_AccessLogEntry)(nil),

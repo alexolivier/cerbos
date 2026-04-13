@@ -5,6 +5,7 @@ syntax = "proto3";
 
 package cerbos.response.v1;
 
+import "authzen/authorization/v1/evaluation.proto";
 import "cerbos/audit/v1/audit.proto";
 import "cerbos/effect/v1/effect.proto";
 import "cerbos/engine/v1/engine.proto";
@@ -379,6 +380,8 @@ message PlaygroundProxyResponse {
     CheckResourceBatchResponse check_resource_batch = 4;
     PlanResourcesResponse plan_resources = 5;
     CheckResourcesResponse check_resources = 6;
+    authzen.authorization.v1.AccessEvaluationResponse access_evaluation = 7;
+    authzen.authorization.v1.AccessEvaluationBatchResponse access_evaluation_batch = 8;
   }
 }
 
