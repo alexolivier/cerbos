@@ -391,3 +391,8 @@ storage:
     dsn: "file:/tmp/cerbos.sqlite?mode=rwc&cache=shared&_fk=true"
 ----
 
+
+[TIP]
+====
+Cerbos Hub builds, signs, and distributes policy bundles to connected PDPs without requiring local storage configuration. See https://docs.cerbos.dev/cerbos-hub/[the Cerbos Hub documentation] for details.
+====

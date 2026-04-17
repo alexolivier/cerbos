@@ -5,3 +5,6 @@
 - xref:k8s-daemonset.adoc[Kubernetes daemonset]
 - xref:serverless-faas.adoc[Serverless/FaaS environments]
 - xref:systemd.adoc[Systemd service]
+
+.Cerbos Hub
+- https://docs.cerbos.dev/cerbos-hub/[Managed platform →]
