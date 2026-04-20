@@ -118,7 +118,7 @@ See xref:debugging.adoc[debugging authorization decisions] for more details.
 
 === A derived role does not automatically grant access
 
-NOTE: Defining a derived role only creates a named condition. You must still write a rule in a resource policy that references the derived role in its `derivedRoles` list for it to have any effect on authorization decisions.
+Defining a derived role only creates a named condition. You must still write a rule in a resource policy that references the derived role in its `derivedRoles` list for it to have any effect on authorization decisions.
 
 === Derived roles and wildcards
 

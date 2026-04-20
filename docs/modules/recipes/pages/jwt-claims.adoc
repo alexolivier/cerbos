@@ -5,19 +5,19 @@ include::ROOT:partial$attributes.adoc[]
 include::ROOT:partial$version-check.adoc[]
 
 
-When xref:configuration:auxdata.adoc[auxiliary data] is configured, Cerbos can verify and decode JWTs sent with requests. The decoded claims are available in policy conditions as `request.aux_data.jwt`. This page covers common patterns for using JWT claims in xref:policies:conditions.adoc[conditions].
+When xref:configuration:auxdata.adoc[auxiliary data] is configured, Cerbos can verify and decode JWTs sent with requests. The decoded claims are available in policy conditions as `request.auxData.jwt`. This page covers common patterns for using JWT claims in xref:policies:conditions.adoc[conditions].
 
 
 == Accessing claims
 
-Claims are accessed using dot notation from the `request.aux_data.jwt` object.
+Claims are accessed using dot notation from the `request.auxData.jwt` object.
 
 .Simple string claim
 [source,yaml,linenums]
 ----
 condition:
   match:
-    expr: request.aux_data.jwt.iss == "https://auth.example.com"
+    expr: request.auxData.jwt.iss == "https://auth.example.com"
 ----
 
 .Nested claim
@@ -25,10 +25,10 @@ condition:
 ----
 condition:
   match:
-    expr: request.aux_data.jwt.custom.department == "engineering"
+    expr: request.auxData.jwt.custom.department == "engineering"
 ----
 
-TIP: Use the `has()` macro to safely check for the existence of optional claims before accessing them: `has(request.aux_data.jwt.custom) && request.aux_data.jwt.custom.role == "admin"`.
+TIP: Use the `has()` macro to safely check for the existence of optional claims before accessing them: `has(request.auxData.jwt.custom) && request.auxData.jwt.custom.role == "admin"`.
 
 
 == Array claims
@@ -41,7 +41,7 @@ JWT claims like `roles`, `groups`, or `scope` are often arrays or space-delimite
 condition:
   match:
     expr: >
-      "admin" in request.aux_data.jwt.roles
+      "admin" in request.auxData.jwt.roles
 ----
 
 .Check if any value from one list exists in another
@@ -50,7 +50,7 @@ condition:
 condition:
   match:
     expr: >
-      request.aux_data.jwt.groups.exists(g, g in ["engineering", "platform"])
+      request.auxData.jwt.groups.exists(g, g in ["engineering", "platform"])
 ----
 
 .Space-delimited scope strings (common in OAuth2)
@@ -59,7 +59,7 @@ condition:
 condition:
   match:
     expr: >
-      "read:documents" in request.aux_data.jwt.scope.split(" ")
+      "read:documents" in request.auxData.jwt.scope.split(" ")
 ----
 
 
@@ -72,7 +72,7 @@ JWT numeric values may arrive as different types depending on the token issuer. 
 condition:
   match:
     expr: >
-      int(request.aux_data.jwt.org_id) == int(R.attr.org_id)
+      int(request.auxData.jwt.org_id) == int(R.attr.org_id)
 ----
 
 
@@ -92,7 +92,7 @@ derivedRoles:
       condition:
         match:
           expr: >
-            has(request.aux_data.jwt.is_internal) && request.aux_data.jwt.is_internal == true
+            has(request.aux_data.jwt.is_internal) && request.auxData.jwt.is_internal == true
 ----
 
 

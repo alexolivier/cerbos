@@ -70,7 +70,7 @@ In this example, the plan tells your application to filter documents where `depa
 
 == Query plan adapters
 
-Converting the AST into database queries by hand can be tedious. Cerbos provides reference adapter implementations for common data layers that handle this conversion for you.
+Cerbos provides reference adapter implementations for common data layers as guidance for your own implementations.
 
 See xref:query-plan-adapters/index.adoc[query plan adapters] for the full list, which includes:
 

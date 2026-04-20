@@ -61,28 +61,28 @@ image:daemonset_deployment.png[DaemonSet model,role="center-img"]
 | Upgrades
 | Independent of application deployments
 | Requires rolling update of application pods
-| Requires rolling update of nodes
+| Independent of application deployments
 
 | Policy propagation
-| Single instance to update
+| Updates propagate to each replica in the service group individually
 | Updates propagate to each sidecar individually
 | Updates propagate to each node individually
 
 | Availability
-| Single point of failure without redundancy
+| Depends on how many replicas are in the service
 | High — each pod has its own instance
 | High — each node has its own instance
 
 | Best for
-| Small clusters, simple setups, non-Kubernetes environments
+| Non-Kubernetes deployments such as bare metal or Kubernetes deployments where it's preferable to manage and scale a single service rather than multiple sidecars. 
 | Latency-sensitive applications, strict isolation requirements
-| Large clusters with many pods per node
+| Less resource consumption than sidecars (one per node compared to one per pod) with similar latency characteristics.
 |===
 
 For most Kubernetes deployments, the *sidecar* model provides the best balance of performance and reliability. Each application pod gets its own Cerbos instance, eliminating network latency concerns and single points of failure.
 
-The *service* model is the simplest to operate and is a good starting point. It works well for non-Kubernetes environments and smaller clusters where a central service won't become a bottleneck.
+The *service* model is the most flexible method of deployment. It can be as simple as a single instance on a VM or as complicated as a globally-distributed and load-balanced service deployed to multiple data centres. 
 
-The *DaemonSet* model is efficient for large clusters where running a sidecar per pod would be wasteful. It provides node-local performance without the overhead of one Cerbos instance per application pod.
+The *DaemonSet* model is efficient for large deployments where running a sidecar per pod would be wasteful. It provides node-local performance without the overhead of one Cerbos instance per application pod.
 
 TIP: Cerbos is designed to handle high request volumes with low latency. In benchmarks, the network hop to a central service is typically sub-millisecond within a cluster. Start with the simplest model that meets your requirements.

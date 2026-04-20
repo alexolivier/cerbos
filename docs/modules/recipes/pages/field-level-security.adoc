@@ -24,7 +24,7 @@ resourcePolicy:
       effect: EFFECT_ALLOW
       roles: ["employee"]
 
-    - actions: ["salary:view", "salary:edit"]
+    - actions: ["salary:*"]
       effect: EFFECT_ALLOW
       roles: ["hr_admin"]
 
