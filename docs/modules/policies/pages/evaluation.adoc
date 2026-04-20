@@ -124,5 +124,3 @@ If a role policy declares `parentRoles`, it inherits and narrows those roles' pe
 . Evaluate all matching rules in the resource policy. If any xref:role_policies.adoc[role policies] apply to the principal's roles, their `allowActions` lists further restrict which actions are permitted for those roles.
 . Apply conflict resolution: deny overrides allow for the same role; allow from any role wins across roles.
 . Any action without an explicit `EFFECT_ALLOW` is `EFFECT_DENY`.
-
-TIP: Use xref:debugging.adoc#include-meta[`includeMeta`] in your requests to see exactly which policy and rules produced each decision.
