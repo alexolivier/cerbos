@@ -52,7 +52,15 @@ However, if the principal has multiple roles and at least one of those roles eva
 
 A principal has roles `["admin", "user"]`.
 
-* Rule 1: ALLOW `admin` to `delete` — matches.
+[source,yaml,linenums]
+----
+rules:
+  - actions: ["delete"]
+    effect: EFFECT_ALLOW
+    roles: ["admin"]
+----
+
+* Rule: ALLOW `admin` to `delete` — matches.
 * No rule allows `user` to `delete`.
 * Result: **EFFECT_ALLOW** — because the `admin` role has an allow.
 
@@ -92,17 +100,29 @@ The derived roles policy must be imported into the resource policy via `importDe
 [#principal-policies]
 == Principal policies
 
-After resource policy evaluation, if a xref:principal_policies.adoc[principal policy] exists for the specific principal ID, it can further restrict (but not expand) the permissions granted by the resource policy. Principal policies act as an additional layer of overrides for individual users.
+xref:principal_policies.adoc[Principal policies] are evaluated *before* resource policies. When a principal policy matches the requesting principal, Cerbos evaluates its rules for the requested actions first. For each action where the principal policy produces an explicit `EFFECT_ALLOW` or `EFFECT_DENY`, that decision is final — the resource policy is not consulted for that action.
+
+Actions the principal policy leaves undecided (no matching rule, or a matching rule whose condition did not hold) fall through to resource policy evaluation.
+
+
+[#role-policies]
+== Role policies
+
+xref:role_policies.adoc[Role policies] apply as an *additive constraint* on top of resource policies. They do not produce `EFFECT_ALLOW` or `EFFECT_DENY` directly — instead, the `allowActions` list acts as an allow-list of actions permitted for that role on each resource. Any action not in the list is an implicit `EFFECT_DENY` for that role.
+
+For an action to be allowed, it must be permitted by *both* the role policy and a matching xref:resource_policies.adoc[resource policy]. A role policy can narrow access granted by a resource policy but cannot grant access the resource policy does not already allow — which is why a resource policy is always required.
+
+If a role policy declares `parentRoles`, it inherits and narrows those roles' permissions recursively.
 
 
 [#evaluation-order]
 == Evaluation order summary
 
-. Look up the resource policy for the resource kind and version (considering xref:scoped_policies.adoc[scope]).
+. If a xref:principal_policies.adoc[principal policy] matches the requesting principal, evaluate it first. For each action with an explicit `EFFECT_ALLOW` or `EFFECT_DENY` from the principal policy, that is the final result and no further evaluation happens for that action.
+. For actions the principal policy did not decide, look up the resource policy for the resource kind and version (considering xref:scoped_policies.adoc[scope]).
 . Evaluate xref:derived_roles.adoc[derived roles] to determine which apply to the principal.
-. Evaluate all matching rules in the resource policy.
+. Evaluate all matching rules in the resource policy. If any xref:role_policies.adoc[role policies] apply to the principal's roles, their `allowActions` lists further restrict which actions are permitted for those roles.
 . Apply conflict resolution: deny overrides allow for the same role; allow from any role wins across roles.
-. Apply xref:principal_policies.adoc[principal policy] overrides if one exists for the principal.
 . Any action without an explicit `EFFECT_ALLOW` is `EFFECT_DENY`.
 
 TIP: Use xref:debugging.adoc#include-meta[`includeMeta`] in your requests to see exactly which policy and rules produced each decision.

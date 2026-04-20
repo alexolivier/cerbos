@@ -92,7 +92,7 @@ derivedRoles:
       condition:
         match:
           expr: >
-            has(request.aux_data.jwt.is_internal) && request.auxData.jwt.is_internal == true
+            has(request.auxData.jwt.is_internal) && request.auxData.jwt.is_internal == true
 ----
 
 
