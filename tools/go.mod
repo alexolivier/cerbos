@@ -14,12 +14,12 @@ require (
 	github.com/planetscale/vtprotobuf v0.6.1-0.20250313105119-ba97887b0a25
 	github.com/vektra/mockery/v3 v3.7.0
 	go.elastic.co/go-licence-detector v0.10.0
-	golang.org/x/tools/gopls v0.21.1
+	golang.org/x/tools v0.44.0
 	golang.org/x/vuln v1.3.0
 	google.golang.org/grpc/cmd/protoc-gen-go-grpc v1.6.1
 	google.golang.org/protobuf v1.36.11
 	gotest.tools/gotestsum v1.13.0
-	nikand.dev/go/cover v0.3.0
+	nikand.dev/go/cover v0.3.1-0.20250213020420-581f8c29634b
 )
 
 require (
@@ -109,17 +109,16 @@ require (
 	golang.org/x/telemetry v0.0.0-20260421165255-392afab6f40e // indirect
 	golang.org/x/term v0.42.0 // indirect
 	golang.org/x/text v0.36.0 // indirect
-	golang.org/x/tools v0.44.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260414002931-afd174a4e478 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260414002931-afd174a4e478 // indirect
 	google.golang.org/grpc v1.80.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	helm.sh/helm/v3 v3.20.2 // indirect
-	nikand.dev/go/cbor v0.0.0-20240927214417-98af9ca7872f // indirect
-	nikand.dev/go/cli v0.0.0-20231112170903-c354aca481d7 // indirect
+	nikand.dev/go/cbor v0.0.0-20250209114510-2072ad4734c5 // indirect
+	nikand.dev/go/cli v0.0.0-20250208225017-de7159bfa4ce // indirect
 	nikand.dev/go/hacked v0.0.0-20250204131511-0939a5c9c782 // indirect
-	tlog.app/go/eazy v0.4.1 // indirect
+	tlog.app/go/eazy v0.4.2 // indirect
 	tlog.app/go/errors v0.11.0 // indirect
 	tlog.app/go/loc v0.7.0 // indirect
-	tlog.app/go/tlog v0.25.2-0.20250204174632-50f9e8696c0c // indirect
+	tlog.app/go/tlog v0.25.2-0.20250211180435-0d82ae6285a8 // indirect
 )
