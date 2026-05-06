@@ -18,7 +18,7 @@ type bitmapIndex struct {
 	role               *globDimension
 	policyKind         dimension[policyv1.Kind]
 	resource           *globDimension
-	fqnBindings        dimension[string]
+	fqnBindings        fqnDimension
 	principal          dimension[string]
 	universe           *Bitmap
 	allowActionsBitmap *Bitmap
@@ -37,7 +37,7 @@ func newBitmapIndex() *bitmapIndex {
 		principal:          newDimension[string](),
 		universe:           NewBitmap(),
 		allowActionsBitmap: NewBitmap(),
-		fqnBindings:        newDimension[string](),
+		fqnBindings:        newFqnDimension(),
 		coresBySum:         make(map[uint64]*FunctionalCore),
 	}
 }
@@ -190,4 +190,32 @@ func (d dimension[T]) Query(arena *bitmapArena, keys []T) *Bitmap {
 	default:
 		return arena.orInto(parts)
 	}
+}
+
+// fqnDimension maps policy FQNs to the binding IDs that originated from them.
+type fqnDimension struct {
+	m map[string][]uint32
+}
+
+const fqnSliceInitCap = 4
+
+func newFqnDimension() fqnDimension {
+	return fqnDimension{m: make(map[string][]uint32)}
+}
+
+func (d fqnDimension) Add(fqn string, id uint32) {
+	ids, ok := d.m[fqn]
+	if !ok {
+		ids = make([]uint32, 0, fqnSliceInitCap)
+	}
+	d.m[fqn] = append(ids, id)
+}
+
+func (d fqnDimension) Get(fqn string) ([]uint32, bool) {
+	ids, ok := d.m[fqn]
+	return ids, ok
+}
+
+func (d fqnDimension) Delete(fqn string) {
+	delete(d.m, fqn)
 }
