@@ -155,14 +155,6 @@ jobs:
           name: junit-reports-${{ strategy.job-index }}
           path: junit.*.xml
 
-      - name: Upload unit coverage to Coveralls
-        uses: shogo82148/actions-goveralls@9606dbc5ac5cf888a0e9ef901515c3cd516a2790 # v1.11.0
-        continue-on-error: true
-        with:
-          path-to-profile: unit.cover
-          flag-name: unit-${{ strategy.job-index }}
-          parallel: true
-
       - name: Upload integration coverage to Coveralls
         uses: shogo82148/actions-goveralls@9606dbc5ac5cf888a0e9ef901515c3cd516a2790 # v1.11.0
         continue-on-error: true
@@ -394,6 +386,10 @@ jobs:
     timeout-minutes: 10
     permissions: {}
     steps:
+      - name: Install bash
+        if: runner.os == 'macOS'
+        run: brew install bash
+
       - name: Check out .node-version file
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
