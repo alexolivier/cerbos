@@ -82,19 +82,17 @@ func (m *Index) IndexRules(rules []*runtimev1.RuleTable_RuleRow) error {
 
 		switch rule.PolicyKind { //nolint:exhaustive
 		case policyv1.Kind_KIND_RESOURCE:
-			if !rule.FromRolePolicy {
-				p, err := getOrGenerateParams(paramsCache, rule.Params)
+			p, err := getOrGenerateParams(paramsCache, rule.Params)
+			if err != nil {
+				return err
+			}
+			params = p
+			if rule.OriginDerivedRole != "" {
+				drp, err := getOrGenerateParams(drParamsCache, rule.DerivedRoleParams)
 				if err != nil {
 					return err
 				}
-				params = p
-				if rule.OriginDerivedRole != "" {
-					drp, err := getOrGenerateParams(drParamsCache, rule.DerivedRoleParams)
-					if err != nil {
-						return err
-					}
-					drParams = drp
-				}
+				drParams = drp
 			}
 		case policyv1.Kind_KIND_PRINCIPAL:
 			p, err := getOrGenerateParams(paramsCache, rule.Params)
@@ -416,11 +414,41 @@ func (m *Index) appendRolePolicyDenies(
 				}
 
 				for _, mb := range matched {
-					// no condition, role policy ACL allows--do nothing and fall through
 					if mb.Core.Condition == nil {
+						// Pure ACL allow: fall through. Role-policy bindings are
+						// otherwise dropped here, so emit any output via a no-effect
+						// binding.
+						if mb.Core.EmitOutput != nil {
+							res = append(res, &Binding{
+								Core: &FunctionalCore{
+									EmitOutput:     mb.Core.EmitOutput,
+									PolicyKind:     policyv1.Kind_KIND_RESOURCE,
+									FromRolePolicy: true,
+									Params:         mb.Core.Params,
+								},
+								Action:        action,
+								Name:          mb.Name,
+								OriginFqn:     mb.OriginFqn,
+								Resource:      mb.Resource,
+								Role:          mb.Role,
+								Scope:         mb.Scope,
+								Version:       mb.Version,
+								EvaluationKey: mb.EvaluationKey,
+							})
+						}
 						continue
 					}
-					// else, negate conditions
+					// Synthetic DENY for the negated condition. Outputs are swapped
+					// because synthetic-activated == user-condition-not-met.
+					var emitOutput *runtimev1.Output
+					if mb.Core.EmitOutput != nil && mb.Core.EmitOutput.When != nil {
+						emitOutput = &runtimev1.Output{
+							When: &runtimev1.Output_When{
+								RuleActivated:   mb.Core.EmitOutput.When.ConditionNotMet,
+								ConditionNotMet: mb.Core.EmitOutput.When.RuleActivated,
+							},
+						}
+					}
 					res = append(res, &Binding{
 						Core: &FunctionalCore{
 							Effect: effectv1.Effect_EFFECT_DENY,
@@ -431,11 +459,14 @@ func (m *Index) appendRolePolicyDenies(
 									},
 								},
 							},
+							EmitOutput:       emitOutput,
 							ScopePermissions: policyv1.ScopePermissions_SCOPE_PERMISSIONS_REQUIRE_PARENTAL_CONSENT_FOR_ALLOWS,
 							PolicyKind:       policyv1.Kind_KIND_RESOURCE,
 							FromRolePolicy:   true,
+							Params:           mb.Core.Params,
 						},
 						Action:        action,
+						Name:          mb.Name,
 						OriginFqn:     mb.OriginFqn,
 						Resource:      mb.Resource,
 						Role:          mb.Role,
@@ -779,14 +810,14 @@ func getOrGenerateParams(cache map[uint64]*RowParams, proto *runtimev1.RuleTable
 	if cached, ok := cache[h]; ok {
 		return cached, nil
 	}
-	progs, err := getCelProgramsFromExpressions(proto.OrderedVariables)
+	progs, err := getCelProgramsFromExpressions(proto.GetOrderedVariables())
 	if err != nil {
 		return nil, err
 	}
 	params := &RowParams{
 		Key:         h,
-		Variables:   proto.OrderedVariables,
-		Constants:   (&structpb.Struct{Fields: proto.Constants}).AsMap(),
+		Variables:   proto.GetOrderedVariables(),
+		Constants:   (&structpb.Struct{Fields: proto.GetConstants()}).AsMap(),
 		CelPrograms: progs,
 	}
 	cache[h] = params
