@@ -59,25 +59,26 @@ PDP memory metrics are scraped before and after each test and printed as a diff 
 | `CONCURRENCY` | Number of concurrent ghz workers | `100` |
 | `CONNECTIONS` | Number of gRPC connections | `5` |
 | `DURATION_SECS` | Duration of the sustained-rate test in seconds | `120` |
-| `ITERATIONS` | Number of requests for the throughput test | `1000000` |
+| `ITERATIONS` | Number of requests for the throughput test | `100000` |
 | `METRICS_URL` | Cerbos metrics endpoint URL | `http://localhost:3592/_cerbos/metrics` |
 | `NUM_POLICIES` | Number of policy sets to generate | `1000` |
 | `PASSWORD` | Cerbos Admin API password | `cerbosAdmin` |
 | `POLICY_SET` | Policy template set to use (see below) | `classic` |
-| `REQ_KIND` | Request template prefix to use | `cr_req01` |
+| `REQ_KIND` | Request template prefix — files matching `${REQ_KIND}_*.json` are included. Use `cr` to mix all request types, or `cr_req01` for a single type | `cr` |
 | `RPS` | Target requests per second for the sustained-rate test | `500` |
 | `SCHEMA_ENFORCEMENT` | Schema enforcement level | `none` |
 | `SERVER` | Cerbos gRPC server address | `localhost:3593` |
 | `STORE` | Storage backend (`disk` or `postgres`) | `disk` |
 | `USERNAME` | Cerbos Admin API username | `cerbos` |
+| `PROTOSET` | Path to a compiled proto descriptor set; bypasses gRPC server reflection (required when reflection is broken, e.g. stripped OpenAPI annotations). Generate with `just generate-protoset` | *(unset)* |
 | `WORK_DIR` | Directory for generated data and temporary files | `./work` |
 
 ## Policy Sets
 
 | Set | Description | `REQ_KIND` values |
 |-----|-------------|-------------------|
-| `classic` | Resource policies with derived roles and scopes | `cr_req01`, `cr_req02` |
-| `multitenant` | Role policies with tenant scoping (12 resource kinds) | `cr_req01`, `cr_req02` |
+| `classic` | Resource policies with derived roles and scopes | `cr` (all), `cr_req01`, `cr_req02` |
+| `multitenant` | Role policies with tenant scoping (12 resource kinds) | `cr` (all), `cr_req01`, `cr_req02` |
 
 Example using the multitenant set:
 
@@ -93,3 +94,31 @@ Prometheus and Grafana are started alongside Cerbos. Grafana is available at `ht
 ## Container Resource Limits
 
 The Cerbos container is capped at 4 CPUs and 512 MB RAM to ensure reproducible results. Adjust `docker-compose.yml` if needed.
+
+## Analysing Latency Distribution
+
+`analyse_latency.sh` checks whether slow requests in a ghz JSON result are evenly distributed over time or clustered (which could indicate GC pauses, warmup effects, or periodic stalls). Requires `jq` and `sqlite3`.
+
+```sh
+# Default: p95 threshold, 1s windows
+./analyse_latency.sh results/disk_throughput.json
+
+# Custom threshold in ms
+./analyse_latency.sh -t 30 results/disk_throughput.json
+
+# Custom percentile and window size
+./analyse_latency.sh -p 99 -w 5 results/disk_rps.json
+```
+
+The script reports:
+- **CV (coefficient of variation)** of slow request counts per window — lower values indicate more uniform distribution
+- **Stall detection**: windows where >50% of requests are slow (system mostly unresponsive)
+- **Throughput gaps**: windows where total request count drops below 50% of the mean
+- **Error clustering**: if errors are present, shows which windows they fall in and whether they're clustered (likely a single event) or spread across the test
+- Per-window breakdown with total requests, slow count, slow%, max latency, and histogram
+
+Note: ghz caps JSON details at 1M requests. For tests exceeding this, per-request analysis will be incomplete.
+
+## GCP Two-VM Testing
+
+See [`gcp/README.md`](gcp/README.md) for running load tests on dedicated GCP VMs. Infrastructure is provisioned with Terraform (see `environments/gcp_loadtest` in the *private* [infrastructure repo](https://github.com/cerbos/infrastructure)).

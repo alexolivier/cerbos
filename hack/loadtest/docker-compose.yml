@@ -2,8 +2,9 @@ services:
   cerbos:
     container_name: cerbos
     image: ghcr.io/cerbos/cerbos:${CERBOS_VERSION:-dev}
+    profiles: [pdp]
     restart: always
-    command: ["server", "--config=/conf/.cerbos.yaml", "--log-level=warn", "--debug-listen-addr=:6666"]
+    command: ["server", "--config=/conf/.cerbos.yaml", "--log-level=warn"]
     depends_on:
       postgres:
         condition: service_started
@@ -19,7 +20,6 @@ services:
     ports:
       - "3592:3592"
       - "3593:3593"
-      - "6666:6666"
     deploy:
       resources:
         limits:
@@ -48,6 +48,8 @@ services:
   prometheus:
     container_name: prometheus
     image: prom/prometheus:latest@sha256:4a61322ac1103a0e3aea2a61ef1718422a48fa046441f299d71e660a3bc71ae9
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--log.level=warn"]
+    user: "0:0"
     volumes:
       - ./conf/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
     ports:
@@ -57,6 +59,10 @@ services:
   grafana:
     container_name: grafana
     image: grafana/grafana:latest@sha256:83749231c3835e390a3144e5e940203e42b9589761f20ef3169c716e734ad505
+    user: "0:0"
+    environment:
+      - GF_LOG_LEVEL=warn
+      - PROMETHEUS_URL=${PROMETHEUS_URL:-http://prometheus:9090}
     volumes:
       - ./conf/grafana/dashboards.yaml:/etc/grafana/provisioning/dashboards/dashboards.yaml
       - ./conf/grafana/datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml
