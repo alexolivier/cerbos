@@ -5,16 +5,16 @@
 
 set -euo pipefail
 
-
 # Test parameters
+CERBOS_VERSION=${CERBOS_VERSION:-"latest"}
 AUDIT_ENABLED=${AUDIT_ENABLED:-"false"}
 CONCURRENCY=${CONCURRENCY:-"100"}
 CONNECTIONS=${CONNECTIONS:-"5"}
 DURATION_SECS=${DURATION_SECS:-"120"}
-ITERATIONS=${ITERATIONS:-"1000000"}
-NUM_POLICIES=${NUM_POLICIES:-"1000"}
+ITERATIONS=${ITERATIONS:-"100000"}
+NUM_POLICIES=${NUM_POLICIES:-"100"}
 POLICY_SET=${POLICY_SET:-"classic"}
-REQ_KIND=${REQ_KIND:-"cr_req01"}
+REQ_KIND=${REQ_KIND:-"cr"}
 RPS=${RPS:-"500"}
 SCHEMA_ENFORCEMENT=${SCHEMA_ENFORCEMENT:-"none"}
 STORE=${STORE:-"disk"}
@@ -23,6 +23,7 @@ USERNAME=${USERNAME:-"cerbos"}
 PASSWORD=${PASSWORD:-"cerbosAdmin"}
 WORK_DIR=${WORK_DIR:-"./work"}
 METRICS_URL=${METRICS_URL:-"http://localhost:3592/_cerbos/metrics"}
+PROTOSET=${PROTOSET:-""}
 
 PDP_METRICS=(
   process_resident_memory_bytes
@@ -116,6 +117,8 @@ clean() {
 }
 
 generateResources() {
+  clean
+  mkdir "${WORK_DIR}"
   printf "Generating %s policy sets\n" "$NUM_POLICIES"
   go run -tags loadtest . --out="${WORK_DIR}" --count="$NUM_POLICIES" --set="${POLICY_SET}"
 }
@@ -125,6 +128,7 @@ put() {
 }
 
 composeProfiles() {
+  echo "--profile" "pdp"
   if [[ "${STORE}" == "postgres" ]]; then
     echo "--profile" "postgres"
   fi
@@ -145,9 +149,9 @@ up() {
   fi
 
   cp conf/cerbos/.cerbos.yaml "${WORK_DIR}/cerbos/.cerbos.yaml"
-
   printf "Starting all services\n"
-  AUDIT_ENABLED="$AUDIT_ENABLED" SCHEMA_ENFORCEMENT="$SCHEMA_ENFORCEMENT" STORE="$STORE" WORK_DIR="$WORK_DIR" docker compose $(composeProfiles) up -d
+
+  CERBOS_VERSION="$CERBOS_VERSION" AUDIT_ENABLED="$AUDIT_ENABLED" SCHEMA_ENFORCEMENT="$SCHEMA_ENFORCEMENT" STORE="$STORE" WORK_DIR="$WORK_DIR" docker compose $(composeProfiles) up -d
 
   while ! grpcurl -plaintext "${SERVER}" grpc.health.v1.Health/Check >/dev/null 2>&1; do
     echo "Waiting for Cerbos..."
@@ -161,7 +165,7 @@ up() {
     put policies "${WORK_DIR}"/policies
   fi
 
-  docker compose $(composeProfiles) logs -f
+  docker compose $(composeProfiles) logs -f 2>/dev/null # it re-parses config and complains about missing env vars, so silence it
 }
 
 executeTest() {
@@ -179,18 +183,37 @@ executeTest() {
   } > "$dataFile"
 
   mkdir -p results
-  local resultPrefix="results/${STORE}_${NUM_POLICIES}"
+  local resultPrefix="results/${STORE}"
 
-  go build -tags printsummary -o "${WORK_DIR}/printsummary" .
+  if [[ ! -x "${WORK_DIR}/printsummary" ]]; then
+    CGO_ENABLED=0 go build -tags printsummary -o "${WORK_DIR}/printsummary" .
+  fi
+
+  # Capture CPU info once for embedding in result files
+  local cpuInfo=""
+  if [[ -f /proc/cpuinfo ]]; then
+    local cpuModel cpuMHz
+    cpuModel=$(grep -m1 "model name" /proc/cpuinfo | cut -d: -f2 | xargs)
+    cpuMHz=$(grep -m1 "cpu MHz" /proc/cpuinfo | cut -d: -f2 | xargs)
+    cpuInfo="CPU: ${cpuModel} @ ${cpuMHz} MHz"
+  fi
+
+  # Proto source: use protoset file if provided, otherwise rely on server reflection
+  local ghzProtoArgs=()
+  if [[ -n "$PROTOSET" ]]; then
+    ghzProtoArgs+=(--protoset "$PROTOSET")
+  fi
 
   # --- Warmup ---
-  printf "Warming up PDP with 1000 requests...\n"
+  printf "Warming up PDP with RPS=$RPS for 5 seconds...\n"
   ghz --insecure \
+      "${ghzProtoArgs[@]}" \
       --call cerbos.svc.v1.CerbosService/CheckResources \
       --data-file "$dataFile" \
       --concurrency "$CONCURRENCY" \
       --connections "$CONNECTIONS" \
-      --total 1000 \
+      --rps "$RPS" \
+      --duration "5s" \
       "${SERVER}" > /dev/null
 
   local beforeFile afterFile metricsAvailable
@@ -199,12 +222,20 @@ executeTest() {
   trap "rm -f \"$beforeFile\" \"$afterFile\"" EXIT INT TERM
 
   # --- Sustained-rate test ---
+  local estimatedCount=$((RPS * DURATION_SECS))
+  local ghzLimit=1000000
+  if [[ $estimatedCount -gt $ghzLimit ]]; then
+    printf "WARNING: estimated %s requests exceeds 1M — ghz will cap JSON details output, limiting per-request analysis\n" "$estimatedCount"
+  fi
   printf "Running sustained-rate test: %s RPS for %ss\n" "$RPS" "$DURATION_SECS"
 
   metricsAvailable=true
   scrapeMetrics "$beforeFile" || metricsAvailable=false
 
+  { printf "Start: %s\n" "$(date '+%T')"; [[ -n "$cpuInfo" ]] && printf "%s\n" "$cpuInfo"; } | tee "${resultPrefix}_rps.txt"
+
   ghz --insecure \
+      "${ghzProtoArgs[@]}" \
       --call cerbos.svc.v1.CerbosService/CheckResources \
       --data-file "$dataFile" \
       --concurrency "$CONCURRENCY" \
@@ -212,11 +243,16 @@ executeTest() {
       --rps "$RPS" \
       --duration "${DURATION_SECS}s" \
       -O json \
-      "${SERVER}" | tee "${resultPrefix}_rps.json" | "${WORK_DIR}/printsummary"
+      "${SERVER}" | \
+        tee "${resultPrefix}_rps.json" | "${WORK_DIR}/printsummary" | \
+        tee -a "${resultPrefix}_rps.txt"
+
+  printf "End:   %s\n" "$(date '+%T')" | tee -a "${resultPrefix}_rps.txt"
 
   if $metricsAvailable && scrapeMetrics "$afterFile"; then
     if [[ -s "$beforeFile" && -s "$afterFile" ]]; then
-      printMetricsDiff "$beforeFile" "$afterFile" "${resultPrefix}_rps_metrics.json"
+      printMetricsDiff "$beforeFile" "$afterFile" "${resultPrefix}_rps_metrics.json" | \
+        tee -a  "${resultPrefix}_rps.txt"
     fi
   fi
 
@@ -225,23 +261,34 @@ executeTest() {
   sleep 10
 
   # --- Throughput test ---
+  if [[ $ITERATIONS -gt $ghzLimit ]]; then
+    printf "WARNING: %s iterations exceeds 1M — ghz will cap JSON details output, limiting per-request analysis\n" "$ITERATIONS"
+  fi
   printf "Running throughput test: %s iterations\n" "$ITERATIONS"
 
   metricsAvailable=true
   scrapeMetrics "$beforeFile" || metricsAvailable=false
 
+  { printf "Start: %s\n" "$(date '+%T')"; [[ -n "$cpuInfo" ]] && printf "%s\n" "$cpuInfo"; } | tee "${resultPrefix}_throughput.txt"
+
   ghz --insecure \
+      "${ghzProtoArgs[@]}" \
       --call cerbos.svc.v1.CerbosService/CheckResources \
       --data-file "$dataFile" \
       --concurrency "$CONCURRENCY" \
       --connections "$CONNECTIONS" \
       --total "$ITERATIONS" \
       -O json \
-      "${SERVER}" | tee "${resultPrefix}_throughput.json" | "${WORK_DIR}/printsummary"
+      "${SERVER}" | \
+        tee "${resultPrefix}_throughput.json" | "${WORK_DIR}/printsummary" | \
+        tee -a "${resultPrefix}_throughput.txt"
+
+  printf "End:   %s\n" "$(date '+%T')" | tee -a "${resultPrefix}_throughput.txt"
 
   if $metricsAvailable && scrapeMetrics "$afterFile"; then
     if [[ -s "$beforeFile" && -s "$afterFile" ]]; then
-      printMetricsDiff "$beforeFile" "$afterFile" "${resultPrefix}_throughput_metrics.json"
+      printMetricsDiff "$beforeFile" "$afterFile" "${resultPrefix}_throughput_metrics.json" | \
+        tee -a "${resultPrefix}_throughput.txt"
     fi
   fi
 }
