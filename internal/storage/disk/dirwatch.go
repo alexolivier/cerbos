@@ -12,7 +12,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"slices"
 	"sync"
 	"time"
 
@@ -35,7 +34,11 @@ const (
 	defaultCooldownPeriod = 2 * time.Second
 )
 
-func watchDir(ctx context.Context, dir string, idx index.Index, sub *storage.SubscriptionManager, cooldownPeriod time.Duration) error {
+type notifier interface {
+	NotifySubscribers(events ...storage.Event)
+}
+
+func watchDir(ctx context.Context, dir string, idx index.Index, n notifier, cooldownPeriod time.Duration) error {
 	resolved, err := filepath.EvalSymlinks(dir)
 	if err != nil {
 		return fmt.Errorf("failed to resolve directory %s: %w", dir, err)
@@ -57,7 +60,7 @@ func watchDir(ctx context.Context, dir string, idx index.Index, sub *storage.Sub
 			return err
 		}
 
-		if !d.IsDir() || util.PathIsHidden(path) {
+		if !d.IsDir() || util.PathIsHidden(path) || d.Name() == util.TestDataDirectory {
 			return nil
 		}
 
@@ -71,13 +74,13 @@ func watchDir(ctx context.Context, dir string, idx index.Index, sub *storage.Sub
 	}
 
 	dw := &dirWatch{
-		watcher:             watcher,
-		idx:                 idx,
-		log:                 zap.S().Named("dir.watch").With("dir", dir),
-		eventBatch:          make(map[string]struct{}),
-		SubscriptionManager: sub,
-		dir:                 resolved,
-		cooldownPeriod:      cooldownPeriod,
+		watcher:        watcher,
+		idx:            idx,
+		log:            zap.S().Named("dir.watch").With("dir", dir),
+		eventBatch:     make(map[string]struct{}),
+		notifier:       n,
+		dir:            resolved,
+		cooldownPeriod: cooldownPeriod,
 	}
 
 	go dw.listen(ctx) //nolint:gosec
@@ -86,12 +89,12 @@ func watchDir(ctx context.Context, dir string, idx index.Index, sub *storage.Sub
 }
 
 type dirWatch struct {
-	lastEventTime time.Time
-	watcher       *fsnotify.Watcher
-	idx           index.Index
-	log           *zap.SugaredLogger
-	eventBatch    map[string]struct{}
-	*storage.SubscriptionManager
+	lastEventTime  time.Time
+	watcher        *fsnotify.Watcher
+	idx            index.Index
+	log            *zap.SugaredLogger
+	eventBatch     map[string]struct{}
+	notifier       notifier
 	dir            string
 	cooldownPeriod time.Duration
 	mu             sync.RWMutex
@@ -145,9 +148,53 @@ func (dw *dirWatch) listen(ctx context.Context) {
 }
 
 func (dw *dirWatch) processEvent(event fsnotify.Event) {
-	path, err := filepath.Rel(dw.dir, event.Name)
+	if event.Op.Has(fsnotify.Create) && dw.processSubdir(event.Name) {
+		return
+	}
+
+	dw.log.Debugw("Processing an event", "operation", event.Op.String(), "name", event.Name)
+	dw.addToEventBatch(event.Name)
+}
+
+func (dw *dirWatch) processSubdir(path string) bool {
+	if util.PathIsHidden(path) {
+		return false
+	}
+
+	st, err := os.Stat(path)
+	if err != nil || !st.IsDir() {
+		return false
+	}
+
+	if err := filepath.WalkDir(path, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		dir := d.IsDir()
+		hidden := util.PathIsHidden(path)
+		switch {
+		case hidden && dir:
+			return fs.SkipDir
+		case hidden && !dir:
+			return nil
+		case !hidden && !dir:
+			dw.addToEventBatch(path)
+			return nil
+		default:
+			return dw.watcher.Add(path)
+		}
+	}); err != nil {
+		dw.log.Errorw("Failed to initiate monitoring on the newly created subdirectory", "directory", path, "error", err)
+	}
+
+	return true
+}
+
+func (dw *dirWatch) addToEventBatch(fullPath string) {
+	path, err := filepath.Rel(dw.dir, fullPath)
 	if err != nil {
-		dw.log.Warnw("Failed to determine relative path of file", "file", path, "error", err)
+		dw.log.Warnw("Failed to determine relative path of file", "file", fullPath, "error", err)
 		return
 	}
 	path = filepath.ToSlash(path)
@@ -156,8 +203,6 @@ func (dw *dirWatch) processEvent(event fsnotify.Event) {
 		dw.log.Debugw("Encountered a non-indexable file type, skipping...", "file", path)
 		return
 	}
-
-	dw.log.Debugw("Processing an event", "operation", event.Op.String(), "name", event.Name)
 
 	dw.mu.Lock()
 	dw.eventBatch[path] = struct{}{}
@@ -185,27 +230,14 @@ func (dw *dirWatch) triggerUpdate() {
 	// The deleted files need to be processed first because we could have a duplicate definition when a file is renamed otherwise.
 	for path := range eventBatch {
 		fullPath := filepath.Join(dw.dir, path)
-		st, err := os.Stat(fullPath)
-		if err == nil {
-			// We need to manually add newly created directories.
-			// See https://github.com/fsnotify/fsnotify/issues/18 for more details.
-			if st.IsDir() && !util.PathIsHidden(fullPath) && !slices.Contains(dw.watcher.WatchList(), fullPath) {
-				if err := dw.watcher.Add(fullPath); err != nil {
-					dw.log.Errorw("Failed to initiate monitoring on the newly created subdirectory", "file", fullPath, zap.Error(err))
-				}
-
-				dw.log.Debugw("Initiated monitoring on the newly created subdirectory", "file", fullPath)
-			}
-
-			continue
-		} else if !errors.Is(err, os.ErrNotExist) {
+		if _, err := os.Stat(fullPath); err == nil || !errors.Is(err, os.ErrNotExist) {
 			continue
 		}
 
 		dw.log.Debugw("Detected file removal", "file", path)
 		if sf, ok := util.RelativeSchemaPath(path); ok {
 			delete(eventBatch, path)
-			dw.NotifySubscribers(storage.NewSchemaEvent(storage.EventDeleteSchema, sf))
+			dw.notifier.NotifySubscribers(storage.NewSchemaEvent(storage.EventDeleteSchema, sf))
 			continue
 		}
 
@@ -217,14 +249,14 @@ func (dw *dirWatch) triggerUpdate() {
 		}
 
 		delete(eventBatch, path)
-		dw.NotifySubscribers(evt)
+		dw.notifier.NotifySubscribers(evt)
 	}
 
 	for path := range eventBatch {
 		fullPath := filepath.Join(dw.dir, path)
 		dw.log.Debugw("Detected file update", "file", path)
 		if sf, ok := util.RelativeSchemaPath(path); ok {
-			dw.NotifySubscribers(storage.NewSchemaEvent(storage.EventAddOrUpdateSchema, sf))
+			dw.notifier.NotifySubscribers(storage.NewSchemaEvent(storage.EventAddOrUpdateSchema, sf))
 			continue
 		}
 
@@ -242,7 +274,7 @@ func (dw *dirWatch) triggerUpdate() {
 			continue
 		}
 
-		dw.NotifySubscribers(evt)
+		dw.notifier.NotifySubscribers(evt)
 	}
 
 	if errCount > 0 {
@@ -265,5 +297,6 @@ func readPolicy(path string) (*policyv1.Policy, error) {
 
 	defer f.Close()
 
-	return policy.ReadPolicy(f)
+	p, _, err := policy.ReadPolicy(f)
+	return p, err
 }

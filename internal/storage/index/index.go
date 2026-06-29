@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"iter"
 	"sort"
 	"sync"
 
@@ -58,6 +59,7 @@ type Index interface {
 	GetFiles() []string
 	GetAllCompilationUnits(context.Context) <-chan *policy.CompilationUnit
 	GetAllCompilationUnitsWithCount(context.Context) (int, <-chan *policy.CompilationUnit)
+	Iter(context.Context) iter.Seq2[*policy.CompilationUnit, error]
 	Clear() error
 	InspectPolicies(context.Context, ...string) (map[string]*responsev1.InspectPoliciesResponse_Result, error)
 	ListPolicyIDs(context.Context, ...string) ([]string, error)
@@ -436,6 +438,20 @@ func (idx *index) GetAllCompilationUnitsWithCount(ctx context.Context) (int, <-c
 	return len(toCompile), outChan
 }
 
+func (idx *index) Iter(ctx context.Context) iter.Seq2[*policy.CompilationUnit, error] {
+	return func(yield func(*policy.CompilationUnit, error) bool) {
+		ctx, cancel := context.WithCancel(ctx)
+		defer cancel()
+
+		ch := idx.GetAllCompilationUnits(ctx)
+		for unit := range ch {
+			if !yield(unit, nil) {
+				return
+			}
+		}
+	}
+}
+
 func (idx *index) Clear() error {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
@@ -535,6 +551,7 @@ func (idx *index) LoadPolicy(_ context.Context, file ...string) ([]*policy.Wrapp
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 
+	pool := make([]policy.Wrapper, len(file))
 	policies := make([]*policy.Wrapper, len(file))
 	for i, f := range file {
 		p, _, err := idx.loadPolicy(idx.fileToModID[f])
@@ -542,8 +559,8 @@ func (idx *index) LoadPolicy(_ context.Context, file ...string) ([]*policy.Wrapp
 			return nil, fmt.Errorf("failed to load policy file with file path %s: %w", f, err)
 		}
 
-		pw := policy.Wrap(p)
-		policies[i] = &pw
+		pool[i].Init(p)
+		policies[i] = &pool[i]
 	}
 
 	return policies, nil

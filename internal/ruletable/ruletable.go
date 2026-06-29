@@ -7,11 +7,13 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
+	"runtime/debug"
+	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/google/cel-go/cel"
-	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 	"google.golang.org/protobuf/types/known/structpb"
 
 	effectv1 "github.com/cerbos/cerbos/api/genpb/cerbos/effect/v1"
@@ -23,6 +25,7 @@ import (
 	"github.com/cerbos/cerbos/internal/namer"
 	"github.com/cerbos/cerbos/internal/observability/logging"
 	"github.com/cerbos/cerbos/internal/ruletable/index"
+	"github.com/cerbos/cerbos/internal/ruletable/planner"
 	"github.com/cerbos/cerbos/internal/schema"
 	"github.com/cerbos/cerbos/internal/util"
 )
@@ -175,7 +178,14 @@ func addPrincipalPolicy(rt *runtimev1.RuleTable, rpps *runtimev1.RunnablePrincip
 					Constants:        p.Constants,
 				},
 				EvaluationKey: evaluationKey,
-				PolicyKind:    policyv1.Kind_KIND_PRINCIPAL,
+				EvaluationKeyTuple: &runtimev1.EvaluationKeyTuple{
+					Prefix:    namer.PrincipalPoliciesPrefix,
+					Principal: principalID,
+					Version:   rpps.Meta.Version,
+					Scope:     p.Scope,
+					RuleName:  rule.Name,
+				},
+				PolicyKind: policyv1.Kind_KIND_PRINCIPAL,
 			}
 
 			if p.ScopePermissions == policyv1.ScopePermissions_SCOPE_PERMISSIONS_REQUIRE_PARENTAL_CONSENT_FOR_ALLOWS &&
@@ -259,6 +269,7 @@ func addResourcePolicy(rt *runtimev1.RuleTable, rrps *runtimev1.RunnableResource
 
 		ruleFqn := namer.RuleFQN(rt.Meta[moduleID.RawValue()], p.Scope, rule.Name)
 		evaluationKey := fmt.Sprintf("%s#%s", namer.ResourcePolicyFQN(sanitizedResource, rrps.Meta.Version, p.Scope), ruleFqn)
+
 		for a := range rule.Actions {
 			for r := range rule.Roles {
 				row := &runtimev1.RuleTable_RuleRow{
@@ -280,7 +291,14 @@ func addResourcePolicy(rt *runtimev1.RuleTable, rrps *runtimev1.RunnableResource
 						Constants:        p.Constants,
 					},
 					EvaluationKey: evaluationKey,
-					PolicyKind:    policyv1.Kind_KIND_RESOURCE,
+					EvaluationKeyTuple: &runtimev1.EvaluationKeyTuple{
+						Prefix:   namer.ResourcePoliciesPrefix,
+						Resource: sanitizedResource,
+						Version:  rrps.Meta.Version,
+						Scope:    p.Scope,
+						RuleName: rule.Name,
+					},
+					PolicyKind: policyv1.Kind_KIND_RESOURCE,
 				}
 
 				if p.ScopePermissions == policyv1.ScopePermissions_SCOPE_PERMISSIONS_REQUIRE_PARENTAL_CONSENT_FOR_ALLOWS &&
@@ -329,7 +347,15 @@ func addResourcePolicy(rt *runtimev1.RuleTable, rrps *runtimev1.RunnableResource
 								Constants:        rdr.Constants,
 							},
 							EvaluationKey: evaluationKey,
-							PolicyKind:    policyv1.Kind_KIND_RESOURCE,
+							EvaluationKeyTuple: &runtimev1.EvaluationKeyTuple{
+								Prefix:      namer.DerivedRolesPrefix,
+								Resource:    sanitizedResource,
+								DerivedRole: dr,
+								Version:     rrps.Meta.Version,
+								Scope:       p.Scope,
+								RuleName:    rule.Name,
+							},
+							PolicyKind: policyv1.Kind_KIND_RESOURCE,
 						}
 
 						if p.ScopePermissions == policyv1.ScopePermissions_SCOPE_PERMISSIONS_REQUIRE_PARENTAL_CONSENT_FOR_ALLOWS &&
@@ -384,7 +410,17 @@ func addRolePolicy(rt *runtimev1.RuleTable, p *runtimev1.RunnableRolePolicySet) 
 					OrderedVariables: p.OrderedVariables,
 					Constants:        p.Constants,
 				},
-				EvaluationKey:  fmt.Sprintf("%s#%s_rule-%03d", namer.PolicyKeyFromFQN(namer.RolePolicyFQN(p.Role, p.Meta.Version, p.Scope)), p.Role, idx),
+				EvaluationKey: fmt.Sprintf("%s#%s_rule-%03d", namer.PolicyKeyFromFQN(namer.RolePolicyFQN(p.Role, p.Meta.Version, p.Scope)), p.Role, idx),
+				// idx restarts at 0 for each resource, and the resource itself is left
+				// out of the key on purpose so this stays identical to the legacy
+				// evaluation_key string.
+				EvaluationKeyTuple: &runtimev1.EvaluationKeyTuple{
+					Prefix:  namer.RolePoliciesPrefix,
+					Role:    p.Role,
+					Version: p.Meta.Version,
+					Scope:   p.Scope,
+					RuleId:  uint32(idx), //nolint:gosec
+				},
 				PolicyKind:     policyv1.Kind_KIND_RESOURCE,
 				FromRolePolicy: true,
 			})
@@ -435,6 +471,7 @@ type RuleTable struct {
 	scopeScopePermissions map[string]policyv1.ScopePermissions
 	policyDerivedRoles    map[namer.ModuleID]map[string]*WrappedRunnableDerivedRole
 	programCache          *ProgramCache
+	planExprCache         *planner.ExprCache
 }
 
 type WrappedRunnableDerivedRole struct {
@@ -443,16 +480,17 @@ type WrappedRunnableDerivedRole struct {
 	VarCacheKey uint64
 }
 
-// ProgramCache caches compiled CEL programs keyed by CheckedExpr pointer to avoid repeated compilation.
-// Programs are compiled with CacheFriendlyTimeDecorator which looks up NowFunc from activation at eval time.
+// ProgramCache caches compiled CEL programs keyed by source expression to avoid repeated
+// compilation. Programs are compiled from Expr.Original (the CheckedExpr trees are released
+// after load) with CacheFriendlyTimeDecorator which looks up NowFunc from activation at eval time.
 type ProgramCache struct {
-	m  map[*exprpb.CheckedExpr]cel.Program
+	m  map[string]cel.Program
 	mu sync.RWMutex
 }
 
 func NewProgramCache() *ProgramCache {
 	return &ProgramCache{
-		m: make(map[*exprpb.CheckedExpr]cel.Program),
+		m: make(map[string]cel.Program),
 	}
 }
 
@@ -465,36 +503,110 @@ func (c *ProgramCache) Clear() {
 	c.mu.Unlock()
 }
 
-func (c *ProgramCache) GetOrCreate(expr *exprpb.CheckedExpr) (cel.Program, error) {
+func (c *ProgramCache) GetOrCreate(expr *runtimev1.Expr) (cel.Program, error) {
 	if c == nil {
-		return conditions.StdEnv.Program(
-			cel.CheckedExprToAst(expr),
-			cel.CustomDecorator(conditions.CacheFriendlyTimeDecorator()),
-		)
+		return compileFromSource(expr.Original)
 	}
 
 	c.mu.RLock()
-	if prg, ok := c.m[expr]; ok {
+	if prg, ok := c.m[expr.Original]; ok {
 		c.mu.RUnlock()
 		return prg, nil
 	}
 	c.mu.RUnlock()
 
-	prg, err := conditions.StdEnv.Program(
-		cel.CheckedExprToAst(expr),
-		cel.CustomDecorator(conditions.CacheFriendlyTimeDecorator()),
-	)
+	prg, err := compileFromSource(expr.Original)
 	if err != nil {
 		return nil, err
 	}
 
 	c.mu.Lock()
-	c.m[expr] = prg
+	c.m[expr.Original] = prg
 	c.mu.Unlock()
 	return prg, nil
 }
 
+func compileFromSource(src string) (cel.Program, error) {
+	ast, iss := conditions.StdEnv.Compile(src)
+	if iss != nil && iss.Err() != nil {
+		return nil, iss.Err()
+	}
+	return conditions.StdEnv.Program(
+		ast,
+		cel.CustomDecorator(conditions.CacheFriendlyTimeDecorator()),
+	)
+}
+
+// buildGCPercent paces the GC during the load+build phase: frequent collections
+// reduce garbage/survivor interleaving in build-era spans.
+const buildGCPercent = 10
+
+var buildGCPacer struct {
+	sync.Mutex
+	depth int
+	prev  int
+}
+
+const buildGCPercentEnvVar = "CERBOS_RULE_TABLE_GC_PERCENT"
+
+// targetGCPercent resolves the build GC percent from the environment once.
+// If the env var is unset or unparsable, it defaults to buildGCPercent (10).
+// Values from 1 to 100 pace the GC at that value. Anything else disables pacing.
+var targetGCPercent = sync.OnceValue(func() int {
+	s := os.Getenv(buildGCPercentEnvVar)
+	if s == "" {
+		return buildGCPercent
+	}
+
+	log := logging.NewLogger("ruletable")
+	p, err := strconv.Atoi(s)
+	if err != nil {
+		log.Warnw("Ignoring invalid build GC percent override", "var", buildGCPercentEnvVar, "value", s)
+		return buildGCPercent
+	}
+	if pacingOff(p) {
+		log.Infow("GC pacing for rule table builds disabled", "var", buildGCPercentEnvVar, "value", s)
+	}
+	return p
+})
+
+func pacingOff(target int) bool {
+	return target > 100 || target < 1
+}
+
+// paceBuildGC lowers the GC percent for the duration of a rule table build and
+// returns a function restoring the original value. It is safe for concurrent or
+// nested builds.
+func paceBuildGC() (restore func()) {
+	target := targetGCPercent()
+	if pacingOff(target) {
+		return func() {}
+	}
+
+	buildGCPacer.Lock()
+	if buildGCPacer.depth == 0 {
+		buildGCPacer.prev = debug.SetGCPercent(target)
+	}
+	buildGCPacer.depth++
+	buildGCPacer.Unlock()
+
+	return func() {
+		buildGCPacer.Lock()
+		buildGCPacer.depth--
+		if buildGCPacer.depth == 0 {
+			debug.SetGCPercent(buildGCPacer.prev)
+		}
+		buildGCPacer.Unlock()
+	}
+}
+
 func NewRuleTableFromLoader(ctx context.Context, policyLoader policyloader.PolicyLoader) (*RuleTable, error) {
+	defer paceBuildGC()()
+
+	if spl, ok := policyLoader.(policyloader.IterablePolicyLoader); ok {
+		return newRuleTableFromIterableLoader(ctx, spl)
+	}
+
 	protoRT := NewProtoRuletable()
 
 	if err := LoadPolicies(ctx, protoRT, policyLoader); err != nil {
@@ -504,10 +616,37 @@ func NewRuleTableFromLoader(ctx context.Context, policyLoader policyloader.Polic
 	return NewRuleTable(protoRT)
 }
 
-func NewRuleTable(protoRT *runtimev1.RuleTable) (*RuleTable, error) {
+func newRuleTableFromIterableLoader(ctx context.Context, spl policyloader.IterablePolicyLoader) (*RuleTable, error) {
 	rt := &RuleTable{
-		idx:          index.New(),
-		programCache: NewProgramCache(),
+		RuleTable:     NewProtoRuletable(),
+		idx:           index.New(),
+		programCache:  NewProgramCache(),
+		planExprCache: planner.NewExprCache(),
+	}
+	rt.initBuildState()
+
+	for rps, err := range spl.Iter(ctx) {
+		if err != nil {
+			return nil, fmt.Errorf("failed to load policies due to compilation failure: %w", err)
+		}
+
+		if err := rt.ingestPolicy(rps); err != nil {
+			return nil, fmt.Errorf("failed to load policies: %w", err)
+		}
+	}
+
+	rt.finalizeBuild()
+
+	return rt, nil
+}
+
+func NewRuleTable(protoRT *runtimev1.RuleTable) (*RuleTable, error) {
+	defer paceBuildGC()()
+
+	rt := &RuleTable{
+		idx:           index.New(),
+		programCache:  NewProgramCache(),
+		planExprCache: planner.NewExprCache(),
 	}
 
 	if err := rt.init(protoRT); err != nil {
@@ -524,28 +663,100 @@ func (rt *RuleTable) init(protoRT *runtimev1.RuleTable) error {
 		return err
 	}
 
-	// clear maps prior to creating new ones to reduce memory pressure in reload scenarios
-	clear(rt.policyDerivedRoles)
-	clear(rt.principalScopeMap)
-	clear(rt.resourceScopeMap)
-	clear(rt.scopeScopePermissions)
-	rt.programCache.Clear()
-
-	rt.idx.Reset()
-	rt.policyDerivedRoles = make(map[namer.ModuleID]map[string]*WrappedRunnableDerivedRole)
-	rt.principalScopeMap = make(map[string]struct{})
-	rt.resourceScopeMap = make(map[string]struct{})
-	rt.scopeScopePermissions = make(map[string]policyv1.ScopePermissions)
+	rt.initBuildState()
 
 	if err := rt.indexRules(rt.Rules); err != nil {
 		return err
 	}
 
+	rt.finalizeBuild()
+
+	return nil
+}
+
+func (rt *RuleTable) initBuildState() {
+	rt.policyDerivedRoles = make(map[namer.ModuleID]map[string]*WrappedRunnableDerivedRole)
+	rt.principalScopeMap = make(map[string]struct{})
+	rt.resourceScopeMap = make(map[string]struct{})
+	rt.scopeScopePermissions = make(map[string]policyv1.ScopePermissions)
+}
+
+// finalizeBuild releases transient build state once all rows have been indexed.
+func (rt *RuleTable) finalizeBuild() {
 	// rules are now indexed, we can clear up any unnecessary transport state
 	clear(rt.Rules)
 	rt.Rules = []*runtimev1.RuleTable_RuleRow{} // otherwise the empty slice hangs around
 
 	clear(rt.PolicyDerivedRoles)
+
+	// Release the per-bitmap capacity slack left by exponential growth during indexing.
+	// Convert sparse bitmaps to slices of integeers.
+	rt.idx.Compact()
+
+	// The CheckedExpr are not needed at runtime. Programs are compiled from source.
+	rt.releaseCheckedExprs()
+	rt.dedupStrings()
+	debug.FreeOSMemory()
+}
+
+// releaseCheckedExprs sets to nil every retained *Expr.Checked.
+func (rt *RuleTable) releaseCheckedExprs() {
+	nilChecked := func(e *runtimev1.Expr) { e.Checked = nil }
+	seen := make(map[*index.FunctionalCore]struct{})
+	for _, b := range rt.GetAllRows() {
+		c := b.Core
+		if c == nil {
+			continue
+		}
+		if _, ok := seen[c]; ok {
+			continue
+		}
+		seen[c] = struct{}{}
+		if c.Condition != nil {
+			conditions.WalkExprs(c.Condition, nilChecked)
+		}
+		if c.DerivedRoleCondition != nil {
+			conditions.WalkExprs(c.DerivedRoleCondition, nilChecked)
+		}
+		if c.EmitOutput != nil {
+			conditions.WalkExprs(c.EmitOutput, nilChecked)
+		}
+		if c.Params != nil {
+			for _, v := range c.Params.Variables {
+				conditions.WalkExprs(v, nilChecked)
+			}
+		}
+		if c.DerivedRoleParams != nil {
+			for _, v := range c.DerivedRoleParams.Variables {
+				conditions.WalkExprs(v, nilChecked)
+			}
+		}
+	}
+	for _, drs := range rt.policyDerivedRoles {
+		for _, dr := range drs {
+			if dr.RunnableDerivedRole != nil {
+				conditions.WalkExprs(dr.RunnableDerivedRole, nilChecked)
+			}
+		}
+	}
+}
+
+// ingestPolicy adds a single compiled policy set to the rule table, indexes its rows,
+// and releases the CheckedExprs of those rows.
+func (rt *RuleTable) ingestPolicy(rps *runtimev1.RunnablePolicySet) error {
+	if rps == nil {
+		return nil
+	}
+
+	rows := AddPolicy(rt.RuleTable, rps)
+	if err := rt.indexRules(rows); err != nil {
+		return fmt.Errorf("failed to index and purge rules: %w", err)
+	}
+
+	nilChecked := func(e *runtimev1.Expr) { e.Checked = nil }
+	for _, row := range rows {
+		conditions.WalkExprs(row, nilChecked)
+	}
 
 	return nil
 }
@@ -588,8 +799,12 @@ func (rt *RuleTable) indexRules(rules []*runtimev1.RuleTable_RuleRow) error {
 	return rt.idx.IndexParentRoles(rt.ScopeParentRoles)
 }
 
-func (rt *RuleTable) GetAllRows() []*index.Binding {
+func (rt *RuleTable) GetAllRows() []*index.BindingHandle {
 	return rt.idx.GetAllRows()
+}
+
+func (rt *RuleTable) EvalKey(id uint32) index.EvaluationKeyTuple {
+	return rt.idx.EvalKey(id)
 }
 
 func (rt *RuleTable) GetDerivedRoles(fqn string) map[string]*WrappedRunnableDerivedRole {

@@ -18,7 +18,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -30,7 +30,7 @@ jobs:
         uses: ./.github/actions/setup-go
 
       - name: Install tools
-        uses: cerbos/actions/install-tools@148106e618c65e91a0026179ccf0cff043e6b962 # main
+        uses: cerbos/actions/install-tools@d5b49896c2cc22445a5167142912282a987ff9ae # main
         with:
           tools: |-
             helm
@@ -42,7 +42,14 @@ jobs:
 
       - name: Install Helm Secrets
         shell: bash
-        run: helm plugin install https://github.com/jkroepke/helm-secrets --version v4.7.6
+        env:
+          HELM_SECRETS_VERSION: "4.7.6"
+        run: |-
+          curl --silent 'https://github.com/jkroepke.gpg' | gpg --import -
+          gpg --export > ~/.gnupg/pubring.gpg # Helm doesn't work with gpg 2.x (https://github.com/helm/helm/issues/2843)
+          helm plugin install "https://github.com/jkroepke/helm-secrets/releases/download/v${HELM_SECRETS_VERSION}/secrets-${HELM_SECRETS_VERSION}.tgz"
+          helm plugin install "https://github.com/jkroepke/helm-secrets/releases/download/v${HELM_SECRETS_VERSION}/secrets-getter-${HELM_SECRETS_VERSION}.tgz"
+          helm plugin install "https://github.com/jkroepke/helm-secrets/releases/download/v${HELM_SECRETS_VERSION}/secrets-post-renderer-${HELM_SECRETS_VERSION}.tgz"
 
       - name: Configure Telepresence
         run: |
@@ -64,6 +71,6 @@ jobs:
 
       - name: Notify Slack on failure
         if: "!success()"
-        uses: cerbos/actions/notify-slack@148106e618c65e91a0026179ccf0cff043e6b962 # main
+        uses: cerbos/actions/notify-slack@d5b49896c2cc22445a5167142912282a987ff9ae # main
         with:
           webhook-url: ${{ secrets.SLACK_CI_NOTIFICATIONS_WEBHOOK_URL }}

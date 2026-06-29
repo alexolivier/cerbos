@@ -5,6 +5,7 @@ package ruletable
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"reflect"
@@ -14,7 +15,6 @@ import (
 	celtypes "github.com/google/cel-go/common/types"
 	"github.com/google/cel-go/common/types/ref"
 	"go.uber.org/multierr"
-	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 	"google.golang.org/protobuf/types/known/structpb"
 
 	auditv1 "github.com/cerbos/cerbos/api/genpb/cerbos/audit/v1"
@@ -176,7 +176,7 @@ func (rt *RuleTable) check(ctx context.Context, tctx tracer.Context, schemaMgr s
 	varCache := make(map[uint64]map[string]any)
 	// We can cache evaluated conditions for combinations of parameters and conditions.
 	// We use a compound key comprising the parameter origin and the rule FQN.
-	conditionCache := make(map[string]bool)
+	conditionCache := make(map[index.EvaluationKeyTuple]bool)
 
 	processedScopedDerivedRoles := make(map[string]struct{})
 	policyTypes := []policyv1.Kind{policyv1.Kind_KIND_PRINCIPAL, policyv1.Kind_KIND_RESOURCE}
@@ -220,7 +220,7 @@ func (rt *RuleTable) check(ctx context.Context, tctx tracer.Context, schemaMgr s
 
 				parentRoles := rt.idx.AddParentRoles([]string{resourceScope}, []string{role})
 
-				var bindings []*index.Binding
+				var bindings []*index.BindingHandle
 			scopesLoop:
 				for _, scope := range scopes {
 					sctx := actx.StartScope(scope)
@@ -282,9 +282,13 @@ func (rt *RuleTable) check(ctx context.Context, tctx tracer.Context, schemaMgr s
 					}
 					bindings = rt.idx.Query(resourceVersion, sanitizedResource, scope, action, parentRoles, pt, pid, bindings[:0])
 					for _, b := range bindings {
-						rulectx := sctx.StartRule(b.Name)
+						bName := index.HandleStr(b.Name)
+						bOriginFqn := index.HandleStr(b.OriginFqn)
+						bScope := index.HandleStr(b.Scope)
+						bEvalKey := rt.idx.EvalKey(b.ID)
+						rulectx := sctx.StartRule(bName)
 
-						if m := rt.GetMeta(b.OriginFqn); m != nil && m.GetSourceAttributes() != nil {
+						if m := rt.GetMeta(bOriginFqn); m != nil && m.GetSourceAttributes() != nil {
 							maps.Copy(result.auditTrail.EffectivePolicies, m.GetSourceAttributes())
 						}
 
@@ -306,12 +310,12 @@ func (rt *RuleTable) check(ctx context.Context, tctx tracer.Context, schemaMgr s
 						}
 
 						var satisfiesCondition bool
-						if c, ok := conditionCache[b.EvaluationKey]; ok { //nolint:nestif
+						if c, ok := conditionCache[bEvalKey]; ok { //nolint:nestif
 							satisfiesCondition = c
 						} else {
 							// We evaluate the derived role condition (if any) first, as this leads to a more sane engine trace output.
 							if b.Core.DerivedRoleCondition != nil {
-								drctx := rulectx.StartDerivedRole(b.OriginDerivedRole)
+								drctx := rulectx.StartDerivedRole(index.HandleStr(b.OriginDerivedRole))
 								var derivedRoleConstants map[string]any
 								var derivedRoleVariables map[string]any
 								if b.Core.DerivedRoleParams != nil {
@@ -341,7 +345,7 @@ func (rt *RuleTable) check(ctx context.Context, tctx tracer.Context, schemaMgr s
 								// terminate early if the derived role condition isn't satisfied, which is consistent with the pre-rule table implementation
 								if !drSatisfied {
 									rulectx.Skipped(err, "No matching derived roles")
-									conditionCache[b.EvaluationKey] = false
+									conditionCache[bEvalKey] = false
 									continue
 								}
 							}
@@ -352,25 +356,18 @@ func (rt *RuleTable) check(ctx context.Context, tctx tracer.Context, schemaMgr s
 								continue
 							}
 
-							conditionCache[b.EvaluationKey] = isSatisfied
+							conditionCache[bEvalKey] = isSatisfied
 							satisfiesCondition = isSatisfied
 						}
 
 						if satisfiesCondition { //nolint:nestif
-							var outputExpr *exprpb.CheckedExpr
+							var outputExpr *runtimev1.Expr
 							if b.Core.EmitOutput != nil && b.Core.EmitOutput.When != nil && b.Core.EmitOutput.When.RuleActivated != nil {
-								outputExpr = b.Core.EmitOutput.When.RuleActivated.Checked
+								outputExpr = b.Core.EmitOutput.When.RuleActivated
 							}
 
 							if outputExpr != nil {
-								octx := rulectx.StartOutput(b.Name)
-								output := &enginev1.OutputEntry{
-									Src:    namer.RuleFQN(rt.GetMeta(b.OriginFqn), b.Scope, b.Name),
-									Val:    evalCtx.evaluateProtobufValueCELExpr(ctx, outputExpr, constants, variables),
-									Action: action,
-								}
-								result.outputs = append(result.outputs, output)
-								octx.ComputedOutput(output)
+								result.outputs = append(result.outputs, evalCtx.evaluateOutput(ctx, rulectx, bName, namer.RuleFQN(rt.GetMeta(bOriginFqn), bScope, bName), action, outputExpr, constants, variables))
 							}
 
 							if b.Core.Effect == effectv1.Effect_EFFECT_ALLOW {
@@ -382,7 +379,7 @@ func (rt *RuleTable) check(ctx context.Context, tctx tracer.Context, schemaMgr s
 								if b.Core.FromRolePolicy {
 									// Implicit DENY generated as a result of no matching role policy action
 									// needs to be attributed to said role policy
-									roleEffectInfo.Policy = namer.PolicyKeyFromFQN(b.OriginFqn)
+									roleEffectInfo.Policy = namer.PolicyKeyFromFQN(bOriginFqn)
 								}
 								break scopesLoop
 							} else if b.NoMatchForScopePermissions {
@@ -391,14 +388,7 @@ func (rt *RuleTable) check(ctx context.Context, tctx tracer.Context, schemaMgr s
 							}
 						} else {
 							if b.Core.EmitOutput != nil && b.Core.EmitOutput.When != nil && b.Core.EmitOutput.When.ConditionNotMet != nil {
-								octx := rulectx.StartOutput(b.Name)
-								output := &enginev1.OutputEntry{
-									Src:    namer.RuleFQN(rt.GetMeta(b.OriginFqn), b.Scope, b.Name),
-									Val:    evalCtx.evaluateProtobufValueCELExpr(ctx, b.Core.EmitOutput.When.ConditionNotMet.Checked, constants, variables),
-									Action: action,
-								}
-								result.outputs = append(result.outputs, output)
-								octx.ComputedOutput(output)
+								result.outputs = append(result.outputs, evalCtx.evaluateOutput(ctx, rulectx, bName, namer.RuleFQN(rt.GetMeta(bOriginFqn), bScope, bName), action, b.Core.EmitOutput.When.ConditionNotMet, constants, variables))
 							}
 							rulectx.Skipped(nil, conditionNotSatisfied)
 						}
@@ -582,7 +572,7 @@ func (ec *EvalContext) evaluateVariables(ctx context.Context, tctx tracer.Contex
 	evalVars := make(map[string]any, len(variables))
 	for _, variable := range variables {
 		vctx := tctx.StartVariable(variable.Name, variable.Expr.Original)
-		val, err := ec.evaluateCELExprToRaw(ctx, variable.Expr.Checked, constants, evalVars)
+		val, err := ec.evaluateCELExprToRaw(ctx, variable.Expr, constants, evalVars)
 		if err != nil {
 			vctx.Skipped(err, "Failed to evaluate expression")
 			errs = multierr.Append(errs, fmt.Errorf("error evaluating `%s := %s`: %w", variable.Name, variable.Expr.Original, err))
@@ -621,7 +611,7 @@ func (ec *EvalContext) evaluatePrograms(tctx tracer.Context, constants map[strin
 		result, _, err := prg.Prog.Eval(ec.buildEvalVars(constants, evalVars))
 		if err != nil {
 			// Ignore errors for expressions that evaluate to an error value (e.g., missing keys).
-			// This matches the behavior of evaluateCELExpr which returns nil for such cases.
+			// This matches the behavior of evaluateCELExprToRaw which returns nil for such cases.
 			if celtypes.IsError(result) {
 				vctx.ComputedResult(nil)
 				continue
@@ -648,7 +638,7 @@ func (ec *EvalContext) SatisfiesCondition(ctx context.Context, tctx tracer.Conte
 	switch t := cond.Op.(type) {
 	case *runtimev1.Condition_Expr:
 		ectx := tctx.StartExpr(t.Expr.Original)
-		val, err := ec.evaluateBoolCELExpr(ctx, t.Expr.Checked, constants, variables)
+		val, err := ec.evaluateBoolCELExpr(ctx, t.Expr, constants, variables)
 		if err != nil {
 			ectx.ComputedBoolResult(false, err, "Failed to evaluate expression")
 			return false, fmt.Errorf("failed to evaluate `%s`: %w", t.Expr.Original, err)
@@ -718,7 +708,7 @@ func (ec *EvalContext) SatisfiesCondition(ctx context.Context, tctx tracer.Conte
 	}
 }
 
-func (ec *EvalContext) evaluateBoolCELExpr(ctx context.Context, expr *exprpb.CheckedExpr, constants, variables map[string]any) (bool, error) {
+func (ec *EvalContext) evaluateBoolCELExpr(ctx context.Context, expr *runtimev1.Expr, constants, variables map[string]any) (bool, error) {
 	val, err := ec.evaluateCELExprToRaw(ctx, expr, constants, variables)
 	if err != nil {
 		return false, err
@@ -736,31 +726,40 @@ func (ec *EvalContext) evaluateBoolCELExpr(ctx context.Context, expr *exprpb.Che
 	return boolVal, nil
 }
 
-func (ec *EvalContext) evaluateProtobufValueCELExpr(ctx context.Context, expr *exprpb.CheckedExpr, constants, variables map[string]any) *structpb.Value {
+func (ec *EvalContext) evaluateOutput(ctx context.Context, tctx tracer.Context, name, src, action string, expr *runtimev1.Expr, constants, variables map[string]any) *enginev1.OutputEntry {
+	octx := tctx.StartOutput(name)
+	output := &enginev1.OutputEntry{Src: src, Action: action}
+	val, err := ec.evaluateOutputExpr(ctx, expr, constants, variables)
+	if err == nil {
+		output.Val = val
+	} else {
+		output.Error = err.Error()
+	}
+	octx.ComputedOutput(output)
+	return output
+}
+
+func (ec *EvalContext) evaluateOutputExpr(ctx context.Context, expr *runtimev1.Expr, constants, variables map[string]any) (*structpb.Value, error) {
 	result, err := ec.evaluateCELExpr(ctx, expr, constants, variables)
 	if err != nil {
-		return structpb.NewStringValue("<failed to evaluate expression>")
-	}
-
-	if result == nil {
-		return nil
+		return nil, err
 	}
 
 	val, err := result.ConvertToNative(reflect.TypeFor[*structpb.Value]())
 	if err != nil {
-		return structpb.NewStringValue("<failed to convert evaluation to protobuf value>")
+		return nil, err
 	}
 
 	pbVal, ok := val.(*structpb.Value)
 	if !ok {
 		// Something is broken in `ConvertToNative`
-		return structpb.NewStringValue("<failed to convert evaluation to protobuf value>")
+		return nil, errors.New("failed to convert evaluation to protobuf value")
 	}
 
-	return pbVal
+	return pbVal, nil
 }
 
-func (ec *EvalContext) evaluateCELExpr(ctx context.Context, expr *exprpb.CheckedExpr, constants, variables map[string]any) (ref.Val, error) {
+func (ec *EvalContext) evaluateCELExpr(ctx context.Context, expr *runtimev1.Expr, constants, variables map[string]any) (ref.Val, error) {
 	if expr == nil {
 		return nil, nil
 	}
@@ -771,24 +770,16 @@ func (ec *EvalContext) evaluateCELExpr(ctx context.Context, expr *exprpb.Checked
 	}
 
 	result, _, err := prg.ContextEval(ctx, ec.buildEvalVars(constants, variables))
+	return result, err
+}
+
+func (ec *EvalContext) evaluateCELExprToRaw(ctx context.Context, expr *runtimev1.Expr, constants, variables map[string]any) (any, error) {
+	result, err := ec.evaluateCELExpr(ctx, expr, constants, variables)
 	if err != nil {
-		// ignore expressions that are invalid
 		if celtypes.IsError(result) {
 			return nil, nil
 		}
 		return nil, err
-	}
-	return result, nil
-}
-
-func (ec *EvalContext) evaluateCELExprToRaw(ctx context.Context, expr *exprpb.CheckedExpr, constants, variables map[string]any) (any, error) {
-	result, err := ec.evaluateCELExpr(ctx, expr, constants, variables)
-	if err != nil {
-		return nil, err
-	}
-
-	if result == nil {
-		return nil, nil
 	}
 
 	return result.Value(), nil

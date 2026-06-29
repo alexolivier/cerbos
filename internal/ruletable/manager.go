@@ -102,6 +102,7 @@ func (mgr *Manager) reload() error {
 		defer cancelFunc()
 
 		mgr.log.Info("Reloading rule table")
+		defer paceBuildGC()()
 		protoRT := NewProtoRuletable()
 
 		// If compilation fails, maintain the last valid rule table state.
@@ -187,11 +188,7 @@ func (mgr *Manager) addPolicy(rps *runtimev1.RunnablePolicySet) error {
 	mgr.mu.Lock()
 	defer mgr.mu.Unlock()
 
-	if err := mgr.indexRules(AddPolicy(mgr.RuleTable.RuleTable, rps)); err != nil {
-		return fmt.Errorf("failed to index and purge rules: %w", err)
-	}
-
-	return nil
+	return mgr.ingestPolicy(rps)
 }
 
 func (mgr *Manager) deletePolicy(moduleID namer.ModuleID) error {
@@ -209,6 +206,7 @@ func (mgr *Manager) doDeletePolicy(moduleID namer.ModuleID) error {
 	}
 
 	mgr.programCache.Clear()
+	mgr.planExprCache.Clear()
 
 	mgr.log.Debugf("Deleting policy %s", meta.GetFqn())
 

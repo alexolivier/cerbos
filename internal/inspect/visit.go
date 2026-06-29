@@ -13,7 +13,7 @@ import (
 	"github.com/google/cel-go/common/ast"
 )
 
-func visitBinding(b *index.Binding, visitor ast.Visitor) error {
+func visitBinding(b *index.BindingHandle, visitor ast.Visitor) error {
 	if err := visitCompiledCondition(b.Core.Condition, visitor); err != nil {
 		return fmt.Errorf("failed to visit condition: %w", err)
 	}
@@ -280,6 +280,11 @@ func visitCompiledConditionExprList(exprList *runtimev1.Condition_ExprList, visi
 func visitCompiledExpr(expr *runtimev1.Expr, visitor ast.Visitor) error {
 	if expr == nil {
 		return nil
+	}
+
+	// The CheckedExpr is released once a rule table is loaded
+	if expr.Checked == nil {
+		return visitExpr(expr.Original, visitor)
 	}
 
 	exprAST, err := ast.ToAST(expr.Checked)

@@ -5,7 +5,6 @@ repositories:
 helmDefaults:
   cleanupOnFail: true
   wait: true
-  recreatePods: true
   force: true
   createNamespace: true
 
@@ -17,7 +16,7 @@ releases:
       e2e-run: '{{ requiredEnv "E2E_RUN_ID" }}'
       e2e-ctx: '{{ requiredEnv "E2E_CONTEXT_ID" }}'
     chart: seaweedfs/seaweedfs
-    version: 4.23.0
+    version: 4.32.0
     hooks:
       - events: ["presync"]
         showlogs: true

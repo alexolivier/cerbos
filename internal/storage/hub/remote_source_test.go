@@ -327,6 +327,48 @@ func runRemoteTests(tctx testCtx) func(t *testing.T) {
 				}, 50*time.Millisecond, 10*time.Millisecond)
 			})
 
+			t.Run("PermissionDenied", func(t *testing.T) {
+				rs, mockClientV1, mockClientV2 := mkRemoteSource(t, tctx, conf)
+
+				callsDone := make(chan struct{})
+
+				switch tctx.version {
+				case bundleapi.Version1:
+					mockClientV1.EXPECT().BootstrapBundle(mock.Anything, label).Return(tctx.bundlePath, nil).Once()
+					mockClientV1.EXPECT().WatchBundle(mock.Anything, label).
+						Run(func(context.Context, string) {
+							close(callsDone)
+						}).
+						Return(nil, bundleapi.ErrPermissionDenied).
+						Once()
+
+				case bundleapi.Version2:
+					mockClientV2.EXPECT().BootstrapBundle(mock.Anything, deploymentID).Return(tctx.bundlePath, tctx.bundleType, loadEncryptionKey(t, tctx), nil).Once()
+					mockClientV2.EXPECT().WatchBundle(mock.Anything, deploymentID).
+						Run(func(context.Context, bundleapiv2.Source) {
+							close(callsDone)
+						}).
+						Return(nil, bundleapi.ErrPermissionDenied).
+						Once()
+
+				default:
+				}
+
+				require.NoError(t, rs.Init(t.Context()), "Failed to init")
+
+				waitForCallsDone(t, callsDone)
+
+				require.Eventually(t, func() bool {
+					return rs.IsHealthy() == false
+				}, 60*time.Millisecond, 10*time.Millisecond, "Source should be unhealthy")
+
+				require.EventuallyWithT(t, func(c *assert.CollectT) {
+					_, err := rs.ListPolicyIDs(t.Context(), storage.ListPolicyIDsParams{IncludeDisabled: true})
+					require.Error(c, err, "Expected error from ListPolicyIDs")
+					require.ErrorIs(c, err, hub.ErrBundleNotLoaded, "Expected bundle not loaded error")
+				}, 50*time.Millisecond, 10*time.Millisecond)
+			})
+
 			t.Run("ErrorsInEvents", func(t *testing.T) {
 				rs, mockClientV1, mockClientV2 := mkRemoteSource(t, tctx, conf)
 				wh := mkWatchHandle()
@@ -571,13 +613,11 @@ func mkRemoteSource(t *testing.T, tctx testCtx, conf *hub.Conf) (_ *hub.RemoteSo
 
 	switch tctx.version {
 	case bundleapi.Version1:
-		clientConf.BundleType = bundlev2.BundleType_BUNDLE_TYPE_LEGACY
 		mockClientV1 = mocks.NewClientV1(t)
 		provider.EXPECT().V1(clientConf).Return(mockClientV1, nil)
 		mockClientV1.EXPECT().HubCredentials().Return(mkCredentials(t, tctx)).Maybe()
 
 	case bundleapi.Version2:
-		clientConf.BundleType = bundlev2.BundleType_BUNDLE_TYPE_RULE_TABLE
 		mockClientV2 = mocks.NewClientV2(t)
 		provider.EXPECT().V2(clientConf).Return(mockClientV2, nil)
 

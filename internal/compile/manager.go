@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"iter"
 
 	"go.uber.org/zap"
 
@@ -88,6 +89,61 @@ func (c *Manager) GetAll(ctx context.Context) ([]*runtimev1.RunnablePolicySet, e
 	}
 
 	return rpsSet, nil
+}
+
+func (c *Manager) Iter(ctx context.Context) iter.Seq2[*runtimev1.RunnablePolicySet, error] {
+	return func(yield func(*runtimev1.RunnablePolicySet, error) bool) {
+		if iterable, ok := c.store.(storage.IterableSourceStore); ok {
+			for unit, err := range iterable.Iter(ctx) {
+				if err != nil {
+					yield(nil, fmt.Errorf("failed to get compilation units: %w", err))
+					return
+				}
+
+				rps, err := c.compile(unit)
+				if err != nil {
+					err = PolicyCompilationErr{underlying: err}
+				}
+
+				if !yield(rps, err) {
+					return
+				}
+			}
+
+			return
+		}
+
+		units, err := c.store.GetAll(ctx)
+		if err != nil {
+			yield(nil, fmt.Errorf("failed to get compilation units: %w", err))
+			return
+		}
+
+		for i, unit := range units {
+			rps, err := c.compile(unit)
+			if err != nil {
+				err = PolicyCompilationErr{underlying: err}
+			}
+
+			if !yield(rps, err) {
+				return
+			}
+
+			// Drop it as soon as it is compiled.
+			units[i] = nil
+		}
+	}
+}
+
+func (c *Manager) CompileAll(ctx context.Context) error {
+	errs := newErrorSet()
+	for _, err := range c.Iter(ctx) {
+		if err != nil {
+			errs.Add(err)
+		}
+	}
+
+	return errs.ErrOrNil()
 }
 
 func (c *Manager) GetAllMatching(ctx context.Context, modIDs []namer.ModuleID) ([]*runtimev1.RunnablePolicySet, error) {

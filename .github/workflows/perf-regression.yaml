@@ -18,7 +18,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Check out code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
 
@@ -33,7 +33,7 @@ jobs:
           docker rm cerbos-extract
 
       - name: Install ghz
-        uses: cerbos/actions/install-tools@f66d840b0ab1a349b605cec039b667d41f749381 # main
+        uses: cerbos/actions/install-tools@d5b49896c2cc22445a5167142912282a987ff9ae # main
         with:
           tools: ghz
 
@@ -49,6 +49,6 @@ jobs:
 
       - name: Notify Slack on failure
         if: "!success()"
-        uses: cerbos/actions/notify-slack@f66d840b0ab1a349b605cec039b667d41f749381 # main
+        uses: cerbos/actions/notify-slack@d5b49896c2cc22445a5167142912282a987ff9ae # main
         with:
           webhook-url: ${{ secrets.SLACK_CI_NOTIFICATIONS_WEBHOOK_URL }}

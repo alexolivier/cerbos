@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"iter"
 	"sync"
 
 	auditv1 "github.com/cerbos/cerbos/api/genpb/cerbos/audit/v1"
@@ -153,6 +154,12 @@ type SourceStore interface {
 	GetDependents(context.Context, ...namer.ModuleID) (map[namer.ModuleID][]namer.ModuleID, error)
 	// LoadPolicy loads the given policy from the store
 	LoadPolicy(context.Context, ...string) ([]*policy.Wrapper, error)
+}
+
+// IterableSourceStore is an optional interface for source stores that can yield their
+// compilation units one at a time instead of materialising them all into a slice.
+type IterableSourceStore interface {
+	Iter(ctx context.Context) iter.Seq2[*policy.CompilationUnit, error]
 }
 
 // BinaryStore is implemented by stores that have pre-compiled policies in binary format.

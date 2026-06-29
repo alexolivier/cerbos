@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"iter"
 	"os"
 	"strings"
 	"sync"
@@ -56,23 +57,31 @@ func init() {
 }
 
 type Store struct {
-	log  *zap.SugaredLogger
-	conf *Conf
-	idx  index.Index
-	repo *git.Repository
-	sf   singleflight.Group
-	*storage.SubscriptionManager
+	log            *zap.SugaredLogger
+	conf           *Conf
+	idx            index.Index
+	repo           *git.Repository
+	sf             singleflight.Group
+	subs           *storage.SubscriptionManager
 	subDir         string
 	currCommitHash string
 	mu             sync.RWMutex
 }
 
+func (s *Store) Subscribe(sub storage.Subscriber) {
+	s.subs.Subscribe(sub)
+}
+
+func (s *Store) Unsubscribe(sub storage.Subscriber) {
+	s.subs.Unsubscribe(sub)
+}
+
 func NewStore(ctx context.Context, conf *Conf) (*Store, error) {
 	s := &Store{
-		log:                 zap.S().Named("git.store").With("dir", conf.CheckoutDir),
-		conf:                conf,
-		subDir:              conf.getSubDir(),
-		SubscriptionManager: storage.NewSubscriptionManager(ctx),
+		log:    zap.S().Named("git.store").With("dir", conf.CheckoutDir),
+		conf:   conf,
+		subDir: conf.getSubDir(),
+		subs:   storage.NewSubscriptionManager(ctx),
 	}
 
 	if err := s.init(ctx); err != nil {
@@ -164,6 +173,10 @@ func (s *Store) GetAll(ctx context.Context) ([]*policy.CompilationUnit, error) {
 	return s.idx.GetAll(ctx)
 }
 
+func (s *Store) Iter(ctx context.Context) iter.Seq2[*policy.CompilationUnit, error] {
+	return s.idx.Iter(ctx)
+}
+
 func (s *Store) GetAllMatching(_ context.Context, modIDs []namer.ModuleID) ([]*policy.CompilationUnit, error) {
 	return s.idx.GetAllMatching(modIDs)
 }
@@ -213,7 +226,7 @@ func (s *Store) Reload(ctx context.Context) error {
 		return fmt.Errorf("failed to reload index: %w", err)
 	}
 
-	s.NotifySubscribers(evts...)
+	s.subs.NotifySubscribers(evts...)
 
 	metrics.Record(ctx, metrics.StoreLastSuccessfulRefresh(), time.Now().UnixMilli(), metrics.DriverKey(DriverName))
 	return nil
@@ -501,7 +514,7 @@ func (s *Store) updateIndex(ctx context.Context) error {
 
 			case util.FileTypeSchema:
 				s.log.Debugf("Removing schema %s", fromPath)
-				s.NotifySubscribers(storage.NewSchemaEvent(storage.EventDeleteSchema, fromPath))
+				s.subs.NotifySubscribers(storage.NewSchemaEvent(storage.EventDeleteSchema, fromPath))
 
 			default:
 				s.log.Debugw("Not applying delete", "change", c)
@@ -517,7 +530,7 @@ func (s *Store) updateIndex(ctx context.Context) error {
 
 		case util.FileTypeSchema:
 			s.log.Debugf("Add/update schema %s", toPath)
-			s.NotifySubscribers(storage.NewSchemaEvent(storage.EventAddOrUpdateSchema, toPath))
+			s.subs.NotifySubscribers(storage.NewSchemaEvent(storage.EventAddOrUpdateSchema, toPath))
 
 		default:
 			s.log.Debugw("Not applying add/update", "change", c)
@@ -570,7 +583,7 @@ func (s *Store) applyIndexUpdate(ce object.ChangeEntry, eventKind storage.EventK
 		return err
 	}
 
-	s.NotifySubscribers(evt)
+	s.subs.NotifySubscribers(evt)
 	return nil
 }
 
@@ -587,7 +600,7 @@ func (s *Store) readPolicyFromBlob(hash, headHash plumbing.Hash) (*policyv1.Poli
 
 	defer reader.Close()
 
-	p, err := policy.ReadPolicy(reader)
+	p, _, err := policy.ReadPolicy(reader)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read policy from blob %s: %w", hash, err)
 	}

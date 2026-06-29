@@ -66,7 +66,7 @@ func (rt *RuleTable) planWithAuditTrail(
 	span.SetAttributes(tracing.PolicyFQN(fqn))
 
 	request := planner.PlanResourcesInputToRequest(input)
-	evalCtx := &planner.EvalContext{TimeFn: nowFunc}
+	evalCtx := &planner.EvalContext{TimeFn: nowFunc, ExprCache: rt.planExprCache}
 
 	filters := make([]*enginev1.PlanResourcesFilter, 0, len(input.Actions))
 	matchedScopes := make(map[string]string, len(input.Actions))
@@ -130,7 +130,7 @@ func (rt *RuleTable) planWithAuditTrail(
 
 				rolesIncludingParents := rt.idx.AddParentRoles([]string{resourceScope}, []string{role})
 
-				var bindings []*index.Binding
+				var bindings []*index.BindingHandle
 				for _, scope := range scopes {
 					// Once a child OVERRIDE_PARENT scope has matched an unconditional ALLOW, no
 					// parent-scope rule can change the outcome, so we skip
@@ -155,7 +155,7 @@ func (rt *RuleTable) planWithAuditTrail(
 									}
 
 									var err error
-									variables, err := planner.VariableExprs(dr.OrderedVariables)
+									variables, err := evalCtx.VariableExprs(dr.OrderedVariables)
 									if err != nil {
 										return nil, auditTrail, err
 									}
@@ -192,7 +192,7 @@ func (rt *RuleTable) planWithAuditTrail(
 					}
 					bindings = rt.idx.Query(resourceVersion, sanitizedResource, scope, action, rolesIncludingParents, pt, pid, bindings[:0])
 					for _, b := range bindings {
-						if m := rt.GetMeta(b.OriginFqn); m != nil && m.GetSourceAttributes() != nil {
+						if m := rt.GetMeta(index.HandleStr(b.OriginFqn)); m != nil && m.GetSourceAttributes() != nil {
 							maps.Copy(effectivePolicies, m.GetSourceAttributes())
 						}
 
@@ -201,7 +201,7 @@ func (rt *RuleTable) planWithAuditTrail(
 						if b.Core.Params != nil {
 							constants = b.Core.Params.Constants
 							var err error
-							variables, err = planner.VariableExprs(b.Core.Params.Variables)
+							variables, err = evalCtx.VariableExprs(b.Core.Params.Variables)
 							if err != nil {
 								return nil, auditTrail, err
 							}
@@ -216,7 +216,7 @@ func (rt *RuleTable) planWithAuditTrail(
 							var variables map[string]celast.Expr
 							if b.Core.DerivedRoleParams != nil {
 								var err error
-								variables, err = planner.VariableExprs(b.Core.DerivedRoleParams.Variables)
+								variables, err = evalCtx.VariableExprs(b.Core.DerivedRoleParams.Variables)
 								if err != nil {
 									return nil, auditTrail, err
 								}

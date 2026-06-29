@@ -112,7 +112,7 @@ func countExpectedPolicies(tb testing.TB, root string) int {
 		}
 
 		if d.IsDir() {
-			if name == schema.Directory {
+			if name == schema.Directory || name == util.TestDataDirectory {
 				return filepath.SkipDir
 			}
 			return nil
@@ -127,8 +127,8 @@ func countExpectedPolicies(tb testing.TB, root string) int {
 			return err
 		}
 
-		p, err := policy.ReadPolicy(bytes.NewReader(b))
-		if err != nil {
+		p, _, err := policy.ReadPolicy(bytes.NewReader(b))
+		if err != nil || p == nil {
 			// ignore invalid policies
 			return nil
 		}

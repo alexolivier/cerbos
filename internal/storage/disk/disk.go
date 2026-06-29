@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"iter"
 	"path/filepath"
 	"time"
 
@@ -48,7 +49,15 @@ type Store struct {
 	conf   *Conf
 	idx    index.Index
 	source *auditv1.PolicySource
-	*storage.SubscriptionManager
+	subs   *storage.SubscriptionManager
+}
+
+func (s *Store) Subscribe(sub storage.Subscriber) {
+	s.subs.Subscribe(sub)
+}
+
+func (s *Store) Unsubscribe(sub storage.Subscriber) {
+	s.subs.Unsubscribe(sub)
 }
 
 func NewStore(ctx context.Context, conf *Conf) (*Store, error) {
@@ -70,9 +79,9 @@ func NewStore(ctx context.Context, conf *Conf) (*Store, error) {
 	}
 
 	s := &Store{
-		conf:                conf,
-		idx:                 idx,
-		SubscriptionManager: storage.NewSubscriptionManager(ctx),
+		conf: conf,
+		idx:  idx,
+		subs: storage.NewSubscriptionManager(ctx),
 		source: &auditv1.PolicySource{
 			Source: &auditv1.PolicySource_Disk_{
 				Disk: &auditv1.PolicySource_Disk{
@@ -84,7 +93,7 @@ func NewStore(ctx context.Context, conf *Conf) (*Store, error) {
 
 	metrics.Record(ctx, metrics.StoreLastSuccessfulRefresh(), time.Now().UnixMilli(), metrics.DriverKey(DriverName))
 	if conf.WatchForChanges && !util.IsArchiveFile(dir) {
-		if err := watchDir(ctx, dir, s.idx, s.SubscriptionManager, defaultCooldownPeriod); err != nil {
+		if err := watchDir(ctx, dir, s.idx, s.subs, defaultCooldownPeriod); err != nil {
 			return nil, err
 		}
 	}
@@ -115,6 +124,10 @@ func (s *Store) GetFirstMatch(_ context.Context, candidates []namer.ModuleID) (*
 
 func (s *Store) GetAll(ctx context.Context) ([]*policy.CompilationUnit, error) {
 	return s.idx.GetAll(ctx)
+}
+
+func (s *Store) Iter(ctx context.Context) iter.Seq2[*policy.CompilationUnit, error] {
+	return s.idx.Iter(ctx)
 }
 
 func (s *Store) GetAllMatching(_ context.Context, modIDs []namer.ModuleID) ([]*policy.CompilationUnit, error) {
@@ -158,7 +171,7 @@ func (s *Store) Reload(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to reload the index: %w", err)
 	}
-	s.NotifySubscribers(evts...)
+	s.subs.NotifySubscribers(evts...)
 
 	metrics.Record(ctx, metrics.StoreLastSuccessfulRefresh(), time.Now().UnixMilli(), metrics.DriverKey(DriverName))
 	return nil
