@@ -1,4 +1,0 @@
-* xref:index.adoc[Home]
-* xref:cerbos:ROOT:index.adoc[Cerbos PDP]
-* xref:cerbos-hub:ROOT:index.adoc[Cerbos Hub]
-* xref:synapse:ROOT:index.adoc[Cerbos Synapse]
