@@ -229,7 +229,7 @@ audit:
 
 
 
-[NOTE]
+[TIP]
 ====
-Cerbos Hub aggregates decision logs from connected PDPs into a single searchable store, with sensitive fields filtered locally before transmission. See https://docs.cerbos.dev/cerbos-hub/audit-log-collection[Audit log collection].
+https://docs.cerbos.dev/cerbos-hub/[Cerbos Hub] aggregates decision logs from connected PDPs into a single searchable store, with sensitive fields filtered locally before transmission. See https://docs.cerbos.dev/cerbos-hub/audit-log-collection[Cerbos Hub audit log collection documentation for more information].
 ====

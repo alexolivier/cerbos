@@ -571,7 +571,7 @@ cerbosctl \
   policy_dir
 ----
 
-[NOTE]
+[TIP]
 ====
-Cerbos Hub distributes signed policy bundles to connected PDPs, eliminating per-instance polling and reload logic. See https://docs.cerbos.dev/cerbos-hub/[the Cerbos Hub documentation].
+https://docs.cerbos.dev/cerbos-hub/[Cerbos Hub] securely distributes policy bundles to connected PDPs, eliminating per-instance polling and reload logic.
 ====

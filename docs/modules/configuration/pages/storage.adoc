@@ -394,5 +394,5 @@ storage:
 
 [TIP]
 ====
-Cerbos Hub builds, signs, and distributes policy bundles to connected PDPs without requiring local storage configuration. See https://docs.cerbos.dev/cerbos-hub/[the Cerbos Hub documentation] for details.
+https://docs.cerbos.dev/cerbos-hub/[Cerbos Hub] automates policy change detection, testing and secure distribution to connected PDPs.
 ====

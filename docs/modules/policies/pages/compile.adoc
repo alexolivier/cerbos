@@ -480,7 +480,7 @@ dagger -m github.com/cerbos/dagger-cerbos call compile --help
 dagger -m github.com/cerbos/dagger-cerbos call server --help
 ----
 
-[NOTE]
+[TIP]
 ====
-Cerbos Hub provides browser-based playgrounds for authoring and testing policies, including execution traces for debugging condition logic. See https://docs.cerbos.dev/cerbos-hub/[the Cerbos Hub documentation].
+https://docs.cerbos.dev/cerbos-hub/[Cerbos Hub] provides private, browser-based, collaborative playgrounds for authoring and testing policies with advanced features like execution traces for debugging condition logic. 
 ====
