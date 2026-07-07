@@ -1,5 +1,9 @@
 xref:index.adoc[Cerbos PDP]
 
+.Cerbos platform
+* xref:cerbos-hub:ROOT:index.adoc[Cerbos Hub]
+* xref:synapse:ROOT:index.adoc[Cerbos Synapse]
+
 .Getting started
 * xref:what-is-cerbos.adoc[What is Cerbos?]
 * xref:quickstart.adoc[Quickstart]
