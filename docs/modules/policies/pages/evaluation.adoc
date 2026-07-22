@@ -26,7 +26,7 @@ If a `scope` is provided, Cerbos looks for the most specific scoped policy first
 . scope `a`
 . no scope
 
-See xref:scoped_policies.adoc[scoped policies] for details on how scoped policy evaluation works.
+By default, a policy matching the exact requested scope must exist. To allow a missing leaf scope to fall back to the nearest available ancestor, enable xref:configuration:engine.adoc#lenient_scopes[lenient scope search]. See xref:scoped_policies.adoc[scoped policies] for details on how scoped policy evaluation works.
 
 
 [#rule-matching]
