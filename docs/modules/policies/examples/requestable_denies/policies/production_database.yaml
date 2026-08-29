@@ -1,0 +1,43 @@
+---
+apiVersion: api.cerbos.dev/v1
+resourcePolicy:
+  version: default
+  resource: production_database
+  variables:
+    import:
+      - cerbos_hub_approval
+  rules:
+    - name: read
+      actions: [read]
+      effect: EFFECT_ALLOW
+      roles: [engineer]
+
+    # tag::allow-rule[]
+    - name: write-with-approval
+      actions: [write]
+      effect: EFFECT_ALLOW
+      roles: [engineer]
+      condition:
+        match:
+          expr: V.approved && V.approved_action == "write"
+    # end::allow-rule[]
+
+    # tag::deny-rule[]
+    - name: write-requestable
+      actions: [write]
+      effect: EFFECT_DENY
+      roles: [engineer]
+      condition:
+        match:
+          expr: '!(V.approved && V.approved_action == "write")'
+      output:
+        when:
+          ruleActivated: |-
+            {
+              "cerbos.accessRequest": {
+                "approver": "dba-oncall",
+                "approval_ttl": "4h",
+                "reason": "Writes to production databases need DBA approval"
+              }
+            }
+    # end::deny-rule[]

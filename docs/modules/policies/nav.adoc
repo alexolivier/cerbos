@@ -10,6 +10,7 @@
 * xref:conditions.adoc[Conditions]
 * xref:variables.adoc[Variables and constants]
 * xref:outputs.adoc[Outputs]
+* xref:requestable_denies.adoc[Requestable denies]
 * xref:schemas.adoc[Schemas]
 * xref:compile.adoc[Validating and testing]
 * xref:best_practices.adoc[Best practices]

@@ -1,0 +1,210 @@
+include::ROOT:partial$attributes.adoc[]
+
+= Requestable denies
+
+include::ROOT:partial$version-check.adoc[]
+
+
+A requestable deny is a deny decision that also says access can be asked for. The decision is still `EFFECT_DENY`, but the response carries an escalation marker: a xref:outputs.adoc[rule output] declared by the `DENY` rule that names who may approve a request for the access, how long an approval may last, and why. The application submits the denied evaluation to Cerbos Hub as an access request. Hub verifies it against the PDP's decision logs, routes it to an approver and, if the request is approved, issues a time-boxed approval token. The application then performs a reevaluation: a fresh `CheckResources` call with the approval token in the auxiliary data.
+
+Policy is the only source of the routing and TTL facts in an escalation marker. Hub owns the access request lifecycle and never answers "allowed" on its own: the only way an approval ever becomes an allow is a reevaluation against current policy, principal and resource. Verification requires the PDP to send its decision logs to Hub through the xref:configuration:audit.adoc#hub[Hub audit backend].
+
+This page covers the parts that live in the PDP and the policy repository:
+
+* the reserved `cerbos.accessRequest` output key that makes a deny requestable,
+* the key set configuration that lets the PDP verify approval tokens, and
+* the policy pattern that checks an approval token against the request being reevaluated.
+
+[#marker]
+== Declaring an escalation marker
+
+Add an output to the `DENY` rule whose value is a map containing the reserved key `cerbos.accessRequest`. Use `when.ruleActivated` so that the marker is emitted only when the rule denies.
+
+[source,yaml,linenums]
+----
+include::example$requestable_denies/policies/production_database.yaml[tag=deny-rule]
+----
+
+The map under `cerbos.accessRequest` is the escalation marker. Its fields are those of `AccessRequestMarker` in the `cerbos.cloud.accessrequest.v1` API package. The PDP passes the marker through as an ordinary output value and does not validate it; Hub does, when it verifies the access request.
+
+[cols="1m,4",options="header"]
+|===
+| Field | Meaning
+
+| approver
+| Routing label for the approver of the access request. Lowercase letters, digits, `.`, `_` and `-`; 1 to 64 characters, starting with a letter or digit (`^[a-z0-9][a-z0-9._-]{0,63}$`).
+
+| approval_ttl
+| Longest an approval may last, as a Go duration string using `s`, `m` or `h` units, such as `4h`. Between `1m` and `720h` (30 days). Hub also applies a workspace maximum.
+
+| reason
+| Why the access needs approval, shown to the requester and the approver. At most 512 characters.
+|===
+
+An approval token cannot be revoked before it expires. Set `approval_ttl` to the longest time you are prepared to honour an approval after it is granted.
+
+[NOTE]
+====
+Outputs are collected from every rule that activates, not only from the rule that decides the action. A `DENY` rule that emits a marker can activate for one of the principal's roles while an `ALLOW` for another role wins, and two `DENY` rules can each emit a marker for the same action. Hub uses the output entry whose `src` is the rule that produced the final deny; a marker from any other rule is ignored.
+====
+
+[#key-set]
+== Trusting approval tokens
+
+An approval token is a JWT signed with a key that belongs to your Hub workspace. Hub publishes the workspace's public keys as a JWKS. Add it as a key set under xref:configuration:auxdata.adoc[`auxData.jwt.keySets`] so that the PDP can verify tokens presented on a reevaluation:
+
+[source,yaml,linenums]
+----
+auxData:
+  jwt:
+    keySets:
+      - id: cerbos-hub-approvals <1>
+        remote:
+          url: https://api.cerbos.cloud/hub/v1/workspaces/EXAMPLEWSEID/access-requests/jwks <2>
+          refreshInterval: 1h
+----
+<1> Key set ID that the application sends with the token on a reevaluation.
+<2> The JWKS URL of your workspace, as shown in Cerbos Hub.
+
+With this key set the PDP checks the token's signature and its `exp` and `nbf` claims. It does not check `aud` or `iss`: a token signed by another workspace's key fails verification, but any token that verifies under this key set is accepted whatever its audience and issuer claims. The <<pattern,policy pattern>> asserts both, so keep those checks in the policy.
+
+A token that fails verification, including one that has expired, fails the request with `INVALID_ARGUMENT` rather than evaluating to a deny. Treat that as a deny in the application and drop the token.
+
+IMPORTANT: When more than one key set is configured, every request that carries a JWT must name the key set with `keySetId`. See xref:configuration:auxdata.adoc[].
+
+[#pattern]
+== The policy pattern
+
+The approval token binds an approval to one principal, one resource and one action. Every check in the pattern compares a claim with the request being reevaluated, so that a token cannot be replayed against a different principal, resource, action or workspace. The claims the pattern uses are:
+
+[cols="1m,4",options="header"]
+|===
+| Claim | Value
+
+| iss
+| `cerbos-hub`
+
+| aud
+| The EID of the workspace that issued the approval. The PDP presents `aud` to policies as a list.
+
+| principal_id
+| ID of the principal the access request was made for.
+
+| resource
+| Map with the `kind` and `id` of the resource the access request was made for.
+
+| action
+| The action the access request was made for.
+
+| exp
+| When the approval ends. Checked by the PDP before the policy runs.
+|===
+
+Define the checks once as xref:variables.adoc#export[exported variables] and import them in every policy that has requestable denies:
+
+[source,yaml,linenums]
+----
+include::example$requestable_denies/policies/cerbos_hub_approval.yaml[]
+----
+
+Replace `EXAMPLEWSEID` with the EID of your workspace. The `has` guards make `approved` false, rather than an error, when the request carries no approval token or the token lacks one of the claims; either way the `DENY` rule activates and the escalation marker is emitted. The named token must be called `approval`.
+
+The action is left out of `approved` because an exported variable cannot see which rule it is evaluated in. Each `ALLOW` rule compares `approved_action` with its own action literal:
+
+[source,yaml,linenums]
+----
+include::example$requestable_denies/policies/production_database.yaml[tag=allow-rule]
+----
+
+The `DENY` rule that carries the escalation marker (see <<marker>>) has the negated condition, so exactly one of the pair activates for the `write` action. Without a matching approval token the response is a requestable deny; with one, it is an allow.
+
+.production_database.yaml
+[%collapsible]
+====
+[source,yaml,linenums]
+----
+include::example$requestable_denies/policies/production_database.yaml[]
+----
+====
+
+The test suite below exercises both halves. Approval tokens appear in the `auxData` fixtures as their claims, with `aud` as a list to match what the PDP produces from a verified token:
+
+.production_database_test.yaml
+[%collapsible]
+====
+[source,yaml,linenums]
+----
+include::example$requestable_denies/tests/production_database_test.yaml[]
+----
+====
+
+[#reevaluation]
+== Reevaluating with an approval token
+
+Once an approval exists, Hub hands the application the approval token. The application repeats the original check with the token as a named JWT under `auxData.jwts`, verified with the key set from <<key-set>>:
+
+[source,json,linenums]
+----
+{
+  "requestId": "example",
+  "principal": {
+    "id": "alice",
+    "roles": ["engineer"]
+  },
+  "resources": [
+    {
+      "resource": {
+        "kind": "production_database",
+        "id": "orders"
+      },
+      "actions": ["write"]
+    }
+  ],
+  "auxData": {
+    "jwts": {
+      "approval": { <1>
+        "token": "xxx.yyy.zzz",
+        "keySetId": "cerbos-hub-approvals"
+      }
+    }
+  }
+}
+----
+<1> The name `approval` is what the exported variables look for.
+
+Without the token, the same request returns a requestable deny:
+
+[source,json,linenums]
+----
+{
+  "requestId": "example",
+  "results": [
+    {
+      "resource": {
+        "id": "orders",
+        "kind": "production_database"
+      },
+      "actions": {
+        "write": "EFFECT_DENY"
+      },
+      "outputs": [
+        {
+          "src": "resource.production_database.vdefault#write-requestable",
+          "val": {
+            "cerbos.accessRequest": {
+              "approver": "dba-oncall",
+              "approval_ttl": "4h",
+              "reason": "Writes to production databases need DBA approval"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
+----
+
+[#authzen]
+== AuthZEN
+
+The xref:api:index.adoc#authzen[AuthZEN endpoints] return only a boolean `decision` by default. Set `"cerbos.includeMeta": true` in the request `context` to receive the full `CheckResources` response under `context["cerbos.response"]`. The escalation marker is in its `outputs`, in the same form as the response above. Without `cerbos.includeMeta`, a requestable deny is indistinguishable from any other deny.

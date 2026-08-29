@@ -1,0 +1,192 @@
+---
+name: ProductionDatabaseApprovals
+description: Requestable denies and approval-token reevaluation for production databases
+
+principals:
+  alice:
+    id: alice
+    roles: [engineer]
+
+resources:
+  orders_db:
+    kind: production_database
+    id: orders
+
+auxData:
+  approval_for_alice_write:
+    jwts:
+      approval:
+        claims:
+          iss: cerbos-hub
+          aud: [EXAMPLEWSEID]
+          sub: alice
+          principal_id: alice
+          resource:
+            kind: production_database
+            id: orders
+          action: write
+  approval_for_other_resource:
+    jwts:
+      approval:
+        claims:
+          iss: cerbos-hub
+          aud: [EXAMPLEWSEID]
+          sub: alice
+          principal_id: alice
+          resource:
+            kind: production_database
+            id: customers
+          action: write
+  approval_for_other_action:
+    jwts:
+      approval:
+        claims:
+          iss: cerbos-hub
+          aud: [EXAMPLEWSEID]
+          sub: alice
+          principal_id: alice
+          resource:
+            kind: production_database
+            id: orders
+          action: read
+  approval_missing_claim:
+    jwts:
+      approval:
+        claims:
+          iss: cerbos-hub
+          aud: [EXAMPLEWSEID]
+          sub: alice
+          resource:
+            kind: production_database
+            id: orders
+          action: write
+  approval_from_other_workspace:
+    jwts:
+      approval:
+        claims:
+          iss: cerbos-hub
+          aud: [OTHERWSEID00]
+          sub: alice
+          principal_id: alice
+          resource:
+            kind: production_database
+            id: orders
+          action: write
+
+tests:
+  - name: Without an approval the write is a requestable deny
+    input:
+      principals: [alice]
+      resources: [orders_db]
+      actions: [read, write]
+    expected:
+      - principal: alice
+        resource: orders_db
+        actions:
+          read: EFFECT_ALLOW
+          write: EFFECT_DENY
+        outputs:
+          - action: write
+            expected:
+              - src: resource.production_database.vdefault#write-requestable
+                val:
+                  cerbos.accessRequest:
+                    approver: dba-oncall
+                    approval_ttl: 4h
+                    reason: Writes to production databases need DBA approval
+
+  - name: A matching approval token turns the reevaluation into an allow
+    input:
+      principals: [alice]
+      resources: [orders_db]
+      actions: [write]
+      auxData: approval_for_alice_write
+    expected:
+      - principal: alice
+        resource: orders_db
+        actions:
+          write: EFFECT_ALLOW
+
+  - name: An approval for a different resource is still a requestable deny
+    input:
+      principals: [alice]
+      resources: [orders_db]
+      actions: [write]
+      auxData: approval_for_other_resource
+    expected:
+      - principal: alice
+        resource: orders_db
+        actions:
+          write: EFFECT_DENY
+        outputs:
+          - action: write
+            expected:
+              - src: resource.production_database.vdefault#write-requestable
+                val:
+                  cerbos.accessRequest:
+                    approver: dba-oncall
+                    approval_ttl: 4h
+                    reason: Writes to production databases need DBA approval
+
+  - name: An approval for a different action is still a requestable deny
+    input:
+      principals: [alice]
+      resources: [orders_db]
+      actions: [write]
+      auxData: approval_for_other_action
+    expected:
+      - principal: alice
+        resource: orders_db
+        actions:
+          write: EFFECT_DENY
+        outputs:
+          - action: write
+            expected:
+              - src: resource.production_database.vdefault#write-requestable
+                val:
+                  cerbos.accessRequest:
+                    approver: dba-oncall
+                    approval_ttl: 4h
+                    reason: Writes to production databases need DBA approval
+
+  - name: An approval addressed to another workspace is still a requestable deny
+    input:
+      principals: [alice]
+      resources: [orders_db]
+      actions: [write]
+      auxData: approval_from_other_workspace
+    expected:
+      - principal: alice
+        resource: orders_db
+        actions:
+          write: EFFECT_DENY
+        outputs:
+          - action: write
+            expected:
+              - src: resource.production_database.vdefault#write-requestable
+                val:
+                  cerbos.accessRequest:
+                    approver: dba-oncall
+                    approval_ttl: 4h
+                    reason: Writes to production databases need DBA approval
+
+  - name: A token that verifies but lacks a claim is still a requestable deny
+    input:
+      principals: [alice]
+      resources: [orders_db]
+      actions: [write]
+      auxData: approval_missing_claim
+    expected:
+      - principal: alice
+        resource: orders_db
+        actions:
+          write: EFFECT_DENY
+        outputs:
+          - action: write
+            expected:
+              - src: resource.production_database.vdefault#write-requestable
+                val:
+                  cerbos.accessRequest:
+                    approver: dba-oncall
+                    approval_ttl: 4h
+                    reason: Writes to production databases need DBA approval
