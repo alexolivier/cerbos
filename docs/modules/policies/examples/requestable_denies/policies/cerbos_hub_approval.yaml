@@ -1,0 +1,14 @@
+---
+apiVersion: api.cerbos.dev/v1
+description: Checks that an approval token issued by Cerbos Hub matches the request being evaluated
+exportVariables:
+  name: cerbos_hub_approval
+  definitions:
+    approved: |-
+      has(request.auxData.jwts.approval) &&
+      request.auxData.jwts.approval.claims.iss == "cerbos-hub" &&
+      "EXAMPLEWSEID" in request.auxData.jwts.approval.claims.aud &&
+      request.auxData.jwts.approval.claims.principal_id == P.id &&
+      request.auxData.jwts.approval.claims.resource.kind == R.kind &&
+      request.auxData.jwts.approval.claims.resource.id == R.id
+    approved_action: request.auxData.jwts.approval.claims.action

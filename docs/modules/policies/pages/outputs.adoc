@@ -124,4 +124,9 @@ NOTE: Depending on the evaluation result of the expression(s) under the `conditi
 
 Output expressions can be any valid CEL expression. You can return simple values such as strings, numbers and booleans or complex values such as maps and lists.
 
+[#reserved-keys]
+== Reserved output keys
+
+Output values are free-form, with one exception. When the value is a map, the key `cerbos.accessRequest` is reserved: Cerbos Hub reads it as an escalation marker, which turns the deny into a xref:requestable_denies.adoc[requestable deny]. Treat the `cerbos.` prefix as reserved for Cerbos and do not use it for your own keys.
+
 CAUTION: Excessive use of output expressions could affect policy evaluation performance. If you use them for debugging purposes, remember to remove them before going to production.
