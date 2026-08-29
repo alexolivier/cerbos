@@ -35,7 +35,7 @@ The map under `cerbos.accessRequest` is the escalation marker. Its fields are th
 | Routing label for the approver of the access request. Lowercase letters, digits, `.`, `_` and `-`; 1 to 64 characters, starting with a letter or digit (`^[a-z0-9][a-z0-9._-]{0,63}$`).
 
 | approval_ttl
-| Longest an approval may last, as a duration string such as `4h`. Between `1m` and `30d`. Hub also applies a workspace maximum.
+| Longest an approval may last, as a Go duration string using `s`, `m` or `h` units, such as `4h`. Between `1m` and `720h` (30 days). Hub also applies a workspace maximum.
 
 | reason
 | Why the access needs approval, shown to the requester and the approver. At most 512 characters.
@@ -107,7 +107,7 @@ Define the checks once as xref:variables.adoc#export[exported variables] and imp
 include::example$requestable_denies/policies/cerbos_hub_approval.yaml[]
 ----
 
-Replace `EXAMPLEWSEID` with the EID of your workspace. The `has` guard makes `approved` false, rather than an error, when the request carries no approval token. The named token must be called `approval`.
+Replace `EXAMPLEWSEID` with the EID of your workspace. The `has` guards make `approved` false, rather than an error, when the request carries no approval token or the token lacks one of the claims; either way the `DENY` rule activates and the escalation marker is emitted. The named token must be called `approval`.
 
 The action is left out of `approved` because an exported variable cannot see which rule it is evaluated in. Each `ALLOW` rule compares `approved_action` with its own action literal:
 
@@ -116,7 +116,16 @@ The action is left out of `approved` because an exported variable cannot see whi
 include::example$requestable_denies/policies/production_database.yaml[tag=allow-rule]
 ----
 
-The `DENY` rule that carries the escalation marker (see <<marker>>) has the negated condition, so exactly one of the pair activates for the `write` action. Without a matching approval token the response is a requestable deny; with one, it is an allow. The complete policy is in the link:{app-github-url}/tree/main/docs/modules/policies/examples/requestable_denies[Cerbos repository].
+The `DENY` rule that carries the escalation marker (see <<marker>>) has the negated condition, so exactly one of the pair activates for the `write` action. Without a matching approval token the response is a requestable deny; with one, it is an allow.
+
+.production_database.yaml
+[%collapsible]
+====
+[source,yaml,linenums]
+----
+include::example$requestable_denies/policies/production_database.yaml[]
+----
+====
 
 The test suite below exercises both halves. Approval tokens appear in the `auxData` fixtures as their claims, with `aud` as a list to match what the PDP produces from a verified token:
 

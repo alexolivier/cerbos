@@ -49,6 +49,17 @@ auxData:
             kind: production_database
             id: orders
           action: read
+  approval_missing_claim:
+    jwts:
+      approval:
+        claims:
+          iss: cerbos-hub
+          aud: [EXAMPLEWSEID]
+          sub: alice
+          resource:
+            kind: production_database
+            id: orders
+          action: write
   approval_from_other_workspace:
     jwts:
       approval:
@@ -128,6 +139,15 @@ tests:
         resource: orders_db
         actions:
           write: EFFECT_DENY
+        outputs:
+          - action: write
+            expected:
+              - src: resource.production_database.vdefault#write-requestable
+                val:
+                  cerbos.accessRequest:
+                    approver: dba-oncall
+                    approval_ttl: 4h
+                    reason: Writes to production databases need DBA approval
 
   - name: An approval addressed to another workspace is still a requestable deny
     input:
@@ -140,3 +160,33 @@ tests:
         resource: orders_db
         actions:
           write: EFFECT_DENY
+        outputs:
+          - action: write
+            expected:
+              - src: resource.production_database.vdefault#write-requestable
+                val:
+                  cerbos.accessRequest:
+                    approver: dba-oncall
+                    approval_ttl: 4h
+                    reason: Writes to production databases need DBA approval
+
+  - name: A token that verifies but lacks a claim is still a requestable deny
+    input:
+      principals: [alice]
+      resources: [orders_db]
+      actions: [write]
+      auxData: approval_missing_claim
+    expected:
+      - principal: alice
+        resource: orders_db
+        actions:
+          write: EFFECT_DENY
+        outputs:
+          - action: write
+            expected:
+              - src: resource.production_database.vdefault#write-requestable
+                val:
+                  cerbos.accessRequest:
+                    approver: dba-oncall
+                    approval_ttl: 4h
+                    reason: Writes to production databases need DBA approval

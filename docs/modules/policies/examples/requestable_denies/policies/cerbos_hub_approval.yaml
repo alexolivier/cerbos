@@ -6,6 +6,11 @@ exportVariables:
   definitions:
     approved: |-
       has(request.auxData.jwts.approval) &&
+      has(request.auxData.jwts.approval.claims.iss) &&
+      has(request.auxData.jwts.approval.claims.aud) &&
+      has(request.auxData.jwts.approval.claims.principal_id) &&
+      has(request.auxData.jwts.approval.claims.resource) &&
+      has(request.auxData.jwts.approval.claims.action) &&
       request.auxData.jwts.approval.claims.iss == "cerbos-hub" &&
       "EXAMPLEWSEID" in request.auxData.jwts.approval.claims.aud &&
       request.auxData.jwts.approval.claims.principal_id == P.id &&
