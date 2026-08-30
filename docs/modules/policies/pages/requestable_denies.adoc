@@ -107,7 +107,9 @@ Define the checks once as xref:variables.adoc#export[exported variables] and imp
 include::example$requestable_denies/policies/cerbos_hub_approval.yaml[]
 ----
 
-Replace `EXAMPLEWSEID` with the EID of your workspace. The `has` guards make `approved` false, rather than an error, when the request carries no approval token or the token lacks one of the claims; either way the `DENY` rule activates and the escalation marker is emitted. The named token must be called `approval`.
+Replace `EXAMPLEWSEID` with the EID of your workspace. The named token must be called `approval`.
+
+The `has` guards make `approved` false and `approved_action` an empty string, rather than an error, when the request carries no approval token or the token lacks one of the claims. Either way the `DENY` rule activates and the escalation marker is emitted. An unguarded claim lookup also denies, because `V.approved` is false, but the PDP logs a CEL evaluation error and adds it to the decision log entry of every check without a token.
 
 The action is left out of `approved` because an exported variable cannot see which rule it is evaluated in. Each `ALLOW` rule compares `approved_action` with its own action literal:
 
