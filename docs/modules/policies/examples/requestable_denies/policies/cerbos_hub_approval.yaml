@@ -16,4 +16,8 @@ exportVariables:
       request.auxData.jwts.approval.claims.principal_id == P.id &&
       request.auxData.jwts.approval.claims.resource.kind == R.kind &&
       request.auxData.jwts.approval.claims.resource.id == R.id
-    approved_action: request.auxData.jwts.approval.claims.action
+    approved_action: |-
+      has(request.auxData.jwts.approval) &&
+      has(request.auxData.jwts.approval.claims.action)
+        ? request.auxData.jwts.approval.claims.action
+        : ""

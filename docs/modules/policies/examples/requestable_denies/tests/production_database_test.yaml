@@ -60,6 +60,12 @@ auxData:
             kind: production_database
             id: orders
           action: write
+  session_token_only:
+    jwts:
+      session:
+        claims:
+          iss: example-idp
+          sub: alice
   approval_from_other_workspace:
     jwts:
       approval:
@@ -155,6 +161,27 @@ tests:
       resources: [orders_db]
       actions: [write]
       auxData: approval_from_other_workspace
+    expected:
+      - principal: alice
+        resource: orders_db
+        actions:
+          write: EFFECT_DENY
+        outputs:
+          - action: write
+            expected:
+              - src: resource.production_database.vdefault#write-requestable
+                val:
+                  cerbos.accessRequest:
+                    approver: dba-oncall
+                    approval_ttl: 4h
+                    reason: Writes to production databases need DBA approval
+
+  - name: A JWT under a name other than approval is still a requestable deny
+    input:
+      principals: [alice]
+      resources: [orders_db]
+      actions: [write]
+      auxData: session_token_only
     expected:
       - principal: alice
         resource: orders_db
