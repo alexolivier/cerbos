@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://www.cerbos.dev/github-header.png" alt="Cerbos" width="100%"/>
+  <a href="https://www.cerbos.dev?utm_campaign=brand_cerbos&utm_source=github&utm_content=readme"><img src="https://www.cerbos.dev/github-header.png" alt="Cerbos" width="100%"/></a>
 </p>
 <p align="center">
 <b>Cerbos authorization management platform</b>
