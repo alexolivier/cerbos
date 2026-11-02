@@ -472,7 +472,7 @@ A `has` expression is true when the attribute is present on the resource. When `
 
 ==== Query plan adapters
 
-Rather than interpreting the condition AST directly, Cerbos provides reference implementations of query plan adapters that convert the `PlanResources` response into a native filter for your data layer. These adapters serve as a starting point -- use them as-is or adapt them to your application's requirements. Reference implementations are available for Prisma, Drizzle, Mongoose, Convex, LangChain/ChromaDB, and SQLAlchemy.
+Rather than interpreting the condition AST directly, Cerbos provides reference implementations of query plan adapters that convert the `PlanResources` response into a native filter for your data layer. These adapters serve as a starting point -- use them as-is or adapt them to your application's requirements. Reference implementations are available for Prisma, Drizzle, Mongoose, Convex, LangChain/ChromaDB, SQLAlchemy, Ent, pgx, JPA, Spring Data JPA, Elasticsearch, ActiveRecord, and Entity Framework Core. The adapters are open source and not covered by Cerbos support.
 
 See xref:recipes:query-plan-adapters/index.adoc[Query plan adapters] for installation, usage, and operator support details.
 

@@ -209,8 +209,21 @@ EOF
 
 ## Query plan adapters
 
-* [Prisma](https://github.com/cerbos/query-plan-adapters/tree/main/prisma)
-* [SQLAlchemy](https://github.com/cerbos/query-plan-adapters/tree/main/sqlalchemy)
+Open source reference adapters, not covered by Cerbos support. See the [query plan adapters docs](https://docs.cerbos.dev/cerbos/latest/recipes/query-plan-adapters/index.html) for details.
+
+* [Prisma](https://github.com/cerbos/query-plan-adapters/tree/main/prisma) (TypeScript)
+* [Drizzle](https://github.com/cerbos/query-plan-adapters/tree/main/drizzle) (TypeScript)
+* [Mongoose](https://github.com/cerbos/query-plan-adapters/tree/main/mongoose) (TypeScript)
+* [Convex](https://github.com/cerbos/query-plan-adapters/tree/main/convex) (TypeScript)
+* [LangChain / ChromaDB](https://github.com/cerbos/query-plan-adapters/tree/main/langchain-chromadb) (TypeScript)
+* [SQLAlchemy](https://github.com/cerbos/query-plan-adapters/tree/main/sqlalchemy) (Python)
+* [Ent](https://github.com/cerbos/query-plan-adapters/tree/main/ent) (Go)
+* [pgx](https://github.com/cerbos/query-plan-adapters/tree/main/pgx) (Go)
+* [JPA](https://github.com/cerbos/query-plan-adapters/tree/main/jpa) (Java)
+* [Spring Data JPA](https://github.com/cerbos/query-plan-adapters/tree/main/spring-data) (Java)
+* [Elasticsearch](https://github.com/cerbos/query-plan-adapters/tree/main/elasticsearch-java) (Java)
+* [ActiveRecord](https://github.com/cerbos/query-plan-adapters/tree/main/activerecord) (Ruby)
+* [Entity Framework Core](https://github.com/cerbos/query-plan-adapters/tree/main/efcore) (C#)
 
 ## Telemetry
 

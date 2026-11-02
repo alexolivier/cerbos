@@ -70,16 +70,23 @@ In this example, the plan tells your application to filter documents where `depa
 
 == Query plan adapters
 
-Cerbos provides reference adapter implementations for common data layers as guidance for your own implementations.
+Cerbos provides reference adapter implementations for common data layers as guidance for your own implementations. The adapters are open source and maintained in the link:https://github.com/cerbos/query-plan-adapters[cerbos/query-plan-adapters] repository. They are not covered by Cerbos support.
 
 See xref:query-plan-adapters/index.adoc[query plan adapters] for the full list, which includes:
 
 * xref:query-plan-adapters/prisma.adoc[Prisma] (TypeScript)
 * xref:query-plan-adapters/drizzle.adoc[Drizzle] (TypeScript)
 * xref:query-plan-adapters/mongoose.adoc[Mongoose] (TypeScript)
-* xref:query-plan-adapters/sqlalchemy.adoc[SQLAlchemy] (Python)
 * xref:query-plan-adapters/convex.adoc[Convex] (TypeScript)
 * xref:query-plan-adapters/langchain-chromadb.adoc[LangChain / ChromaDB] (TypeScript)
+* xref:query-plan-adapters/sqlalchemy.adoc[SQLAlchemy] (Python)
+* xref:query-plan-adapters/ent.adoc[Ent] (Go)
+* xref:query-plan-adapters/pgx.adoc[pgx] (Go)
+* xref:query-plan-adapters/jpa.adoc[JPA] (Java)
+* xref:query-plan-adapters/spring-data.adoc[Spring Data JPA] (Java)
+* xref:query-plan-adapters/elasticsearch-java.adoc[Elasticsearch] (Java)
+* xref:query-plan-adapters/activerecord.adoc[ActiveRecord] (Ruby)
+* xref:query-plan-adapters/efcore.adoc[Entity Framework Core] (C#)
 
 
 == When to use CheckResources vs PlanResources
