@@ -1,0 +1,203 @@
+include::ROOT:partial$attributes.adoc[]
+
+= pgx adapter
+
+include::ROOT:partial$version-check.adoc[]
+
+The `github.com/cerbos/query-plan-adapters/pgx` module converts a Cerbos xref:api:index.adoc#resources-query-plan[`PlanResources`] response into a PostgreSQL `WHERE` fragment and its bound arguments, ready to pass to link:https://github.com/jackc/pgx[pgx]. The fragment is plain SQL text with `$n` placeholders, so any driver that supports PostgreSQL ordinal parameters can run it.
+
+This adapter is an open source reference implementation maintained in the link:https://github.com/cerbos/query-plan-adapters[cerbos/query-plan-adapters] repository. It is not covered by Cerbos support.
+
+== Requirements
+
+* link:https://github.com/cerbos/cerbos-sdk-go[Cerbos Go SDK] v0.4
+* `github.com/jackc/pgx/v5`
+* PostgreSQL
+* Go >= 1.27.3
+
+== Installation
+
+[source,bash]
+----
+go get github.com/cerbos/query-plan-adapters/pgx
+----
+
+== Supported operators
+
+[cols="1,2", options="header"]
+|===
+| Category | Operators
+
+| Logical
+| `and`, `or`, `not`, `if` (ternary)
+
+| Comparison
+| `eq`, `ne`, `lt`, `le`, `gt`, `ge`
+
+| Membership
+| `in`, `hasIntersection`, `isSubset`, `intersect`, `except`
+
+| String
+| `contains`, `startsWith`, `endsWith`, `upperAscii`, `string()`
+
+| Existence
+| `has`
+
+| Collection
+| `exists`, `exists_one`, `all`, `filter`, `map`, `size` -- correlated subqueries against the relation table
+
+| Arithmetic
+| `add`, `sub`, `mult`, `div`, `mod`
+
+| Temporal
+| `timestamp`, `duration`, `timeSince` -- folded into the constant side of the comparison
+
+| Hierarchy
+| `hierarchy`, `ancestorOf`, `descendentOf`, `overlaps`
+|===
+
+Every value from the plan is a bound parameter with an explicit cast (for example, `$1::text`), and every identifier is double-quoted.
+
+== Usage
+
+[source,go]
+----
+import (
+    "github.com/cerbos/cerbos-sdk-go/cerbos"
+    cerbospgx "github.com/cerbos/query-plan-adapters/pgx"
+    "github.com/jackc/pgx/v5"
+    "github.com/jackc/pgx/v5/pgxpool"
+)
+
+var mapper = cerbospgx.MapperMap{
+    "request.resource.attr.ownerId": {Column: "owner_id"},
+    "request.resource.attr.status":  {Column: "status"},
+}
+
+func listContacts(ctx context.Context, c *cerbos.GRPCClient, pool *pgxpool.Pool, principal *cerbos.Principal) (pgx.Rows, error) {
+    plan, err := c.PlanResources(ctx, principal, cerbos.NewResource("contact", ""), "read")
+    if err != nil {
+        return nil, err
+    }
+
+    result, err := cerbospgx.Translate(plan.PlanResourcesResponse, "contact", mapper)
+    if err != nil {
+        return nil, err
+    }
+
+    switch result.Kind {
+    case cerbospgx.KindAlwaysDenied:
+        return nil, nil
+    case cerbospgx.KindAlwaysAllowed:
+        return pool.Query(ctx, `SELECT * FROM contact`)
+    case cerbospgx.KindConditional:
+        return pool.Query(ctx, `SELECT * FROM contact WHERE `+result.Where, result.Args...)
+    }
+    return nil, fmt.Errorf("unexpected plan kind %d", result.Kind)
+}
+----
+
+`Translate` takes the resource's table name and a mapper. `Result.Where` is a bare boolean expression (without the `WHERE` keyword) with placeholders numbered from `$1`, and `Result.Args` binds them in order. `Where` is never empty: it is `FALSE` for `KindAlwaysDenied` and `TRUE` for `KindAlwaysAllowed`, with no `Args`.
+
+=== Composing with your own predicates
+
+PostgreSQL placeholders are ordinal, so when the fragment follows your own parameters you must renumber it. Pass `WithPlaceholderOffset(len(yourArgs))` and append `Result.Args` after your arguments:
+
+[source,go]
+----
+where, args := `archived = $1 AND region = $2`, []any{false, "emea"}
+
+result, err := cerbospgx.Translate(plan.PlanResourcesResponse, "contact", mapper,
+    cerbospgx.WithPlaceholderOffset(len(args))) // the fragment now starts at $3
+if err != nil {
+    return err
+}
+
+where += " AND (" + result.Where + ")"
+args = append(args, result.Args...)
+rows, err := pool.Query(ctx, `SELECT id FROM contact WHERE `+where, args...)
+----
+
+When the fragment comes first (for example, followed by `LIMIT` and `OFFSET`), number your own parameters from `len(result.Args)+1`. The offset renumbers only the fragment's placeholders; ordering the argument slice correctly is up to you.
+
+== Field mapper
+
+A `Mapper` resolves each attribute reference in the plan to storage. Use `MapperMap` for a static mapping or `MapperFunc` for a function. Resolution is fail-closed: an unmapped reference is an error, never a guessed column name.
+
+[cols="1,3", options="header"]
+|===
+| `Entry` field | Use
+
+| `Column`
+| Column on the row being read (the resource row, or the element row inside a collection)
+
+| `ValueType`
+| `ValueTimestamp`, `ValueBool`, `ValueString`, `ValueNumber`, or `ValueDefault`. The plan carries no types, so declare them where storage needs it -- for example, `ValueTimestamp` on every timestamp column
+
+| `NullConvention`
+| Per-attribute NULL convention (see <<null-representation>>)
+
+| `Relation`
+| A collection- or object-valued attribute stored in another table
+
+| `ScalarRelation`
+| A scalar read through a to-one relation (`R.attr.parent.name`), rendered as a correlated scalar subquery
+|===
+
+== Relation mapping
+
+Collection attributes are translated into correlated subqueries against the related table. A relation can reach through intermediate tables with `Via []Hop`, and `SubqueryFilter` declares a predicate your application applies to its own reads of that table (for example, a soft-delete column), so the subquery examines the same rows your application loaded into the resource attributes.
+
+[source,go]
+----
+tags := &cerbospgx.Relation{
+    Table:        "contact_tag",
+    SourceColumn: "id",         // column on the parent row
+    TargetColumn: "contact_id", // matching column on contact_tag
+    Field:        &cerbospgx.Entry{Column: "name"},                     // scalar elements
+    Fields:       map[string]cerbospgx.Entry{"name": {Column: "name"}}, // object elements (t.name)
+    SubqueryFilter: []cerbospgx.Restriction{
+        {Column: "deleted_at", Op: cerbospgx.RestrictIsNull},
+    },
+}
+
+mapper := cerbospgx.MapperMap{
+    "request.resource.attr.tags":      {Relation: tags},
+    "request.resource.attr.createdAt": {Column: "created_at", ValueType: cerbospgx.ValueTimestamp},
+    "request.resource.attr.company": {
+        Column:         "name",
+        ScalarRelation: &cerbospgx.Relation{Table: "company", SourceColumn: "company_id", TargetColumn: "id"},
+    },
+}
+----
+
+`SubqueryFilter` supports `RestrictEq`, `RestrictNe`, `RestrictIsNull`, `RestrictIsNotNull`, `RestrictIn`, and `RestrictNotIn`.
+
+[#null-representation]
+== NULL representation
+
+The planner emits the same `eq(attr, null)` node whether a NULL column is sent to `CheckResources` as an explicit `null` or omitted, so you have to tell the adapter which convention you use:
+
+* `NullOmitted` (default) -- null operands are rejected, because an `IS NULL` filter would over-grant rows the PDP denies
+* `NullExplicit` -- `== null` translates to `IS NULL`
+
+[source,go]
+----
+cerbospgx.Translate(plan.PlanResourcesResponse, "contact", mapper,
+    cerbospgx.WithNullRepresentation(cerbospgx.NullExplicit))
+----
+
+To mix conventions in one policy, set `NullConvention` on each `Entry` to `NullConventionExplicit` or `NullConventionOmitted`. The call option then covers only undeclared attributes.
+
+== Limitations
+
+* Every shape the adapter cannot express returns an error wrapping `cerbospgx.ErrUnsupported`, never a broader filter. Use `errors.Is(err, cerbospgx.ErrUnsupported)` to distinguish this from a mapping or configuration error.
+* `matches` is refused, because PostgreSQL does not implement CEL's RE2 regular expression dialect.
+* `int()` and `double()` casts are refused, because SQL `CAST` parses and rounds differently from CEL.
+* `R.attr.a + R.attr.b` between two columns is refused unless one side is declared `ValueString`.
+* String equality and ordering follow the column collation. Use a deterministic, byte-order collation (`"C"`) on every column a policy compares or orders. Nondeterministic ICU collations, `citext`, and linguistic collations such as `en_US.UTF-8` over-grant, and the adapter cannot detect it.
+* PostgreSQL stores timestamps at microsecond precision, so keep policy timestamps at microsecond precision or coarser.
+
+== Source code
+
+link:https://github.com/cerbos/query-plan-adapters/tree/main/pgx[cerbos/query-plan-adapters/pgx]

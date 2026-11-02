@@ -6,18 +6,20 @@ include::ROOT:partial$version-check.adoc[]
 
 The `@cerbos/langchain-chromadb` package converts a Cerbos xref:api:index.adoc#resources-query-plan[`PlanResources`] response into a link:https://www.trychroma.com/[ChromaDB] `Where` filter object compatible with the LangChain.js Chroma vector store. This enables authorization-aware similarity searches where Cerbos policy conditions are pushed down as metadata filters.
 
+This adapter is an open source reference implementation maintained in the link:https://github.com/cerbos/query-plan-adapters[cerbos/query-plan-adapters] repository. It is not covered by Cerbos support.
+
 == Requirements
 
-* Cerbos >= v0.16
+* `@cerbos/core` `^0.32.0 || ^0.33.0` (peer dependency)
 * `@cerbos/http` or `@cerbos/grpc` client
 * ChromaDB 3.x
-* Node.js >= 20.0.0
+* Node.js >= 22.0.0
 
 == Installation
 
 [source,bash]
 ----
-npm install @cerbos/langchain-chromadb
+npm install @cerbos/langchain-chromadb @cerbos/core
 ----
 
 == Supported operators
@@ -50,13 +52,24 @@ ChromaDB has no `$not` or `$nor` filter. The adapter handles `not` expressions b
 * `not(or(A, B))` becomes `$and[not(A), not(B)]` (De Morgan's law)
 * `not(not(X))` becomes `X` (double negation elimination)
 
+ChromaDB matches records that are missing the key for `$ne` and `$nin`, whereas Cerbos denies a missing attribute. The adapter therefore only emits `$ne` and `$nin` for fields declared `required: true` in the field name mapper, or where a `valueType: "boolean"` or `numericType: "integer"` declaration lets it spell the inequality another way. Otherwise it throws.
+
 === Unsupported operators
 
-ChromaDB stores flat scalar metadata. The following operators cannot be mapped and cause `queryPlanToChromaDB` to throw an error:
+ChromaDB stores flat scalar metadata. The following cannot be mapped and cause `queryPlanToChromaDB` to throw `UnsupportedOperatorError`:
 
 * String: `contains`, `startsWith`, `endsWith`
-* Existence: `isSet`
-* Collection: `hasIntersection`, `exists`, `exists_one`, `all`, `filter`, `map`, `lambda`, `size`
+* Null comparisons -- ChromaDB metadata has no `null`
+* Collection: `hasIntersection`, `exists`, `exists_one`, `all`, `filter`, `map`, `lambda`, `size`, and positional reads such as `R.attr.list[0]`
+* Field-to-field comparisons, arithmetic, casts, ternaries, hierarchy and timestamp operations
+
+A malformed plan or mapper misconfiguration throws a plain `Error`, so a fallback keyed on `UnsupportedOperatorError` does not swallow it.
+
+=== Post-filtering
+
+Pass `allowPostFilter: true` to have the adapter evaluate conditions that ChromaDB cannot express in memory instead of throwing. A conditional result then carries either `filters` alone, as before, or a `postFilter` predicate over a record's metadata, with an optional `prefilter` that only narrows the search. `postFilter` evaluates the whole condition, so apply it to every candidate before the record is used, returned or passed to a model.
+
+Because ChromaDB ranks and truncates results before the post-filter runs, a top-k search can return fewer than k results. Over-fetch and cut back to k afterwards.
 
 == Usage
 
@@ -96,7 +109,12 @@ const matches = await chroma.similaritySearch("query", 10, filters);
 
 == Field name mapper
 
-The mapper translates Cerbos attribute references to ChromaDB metadata field names. It accepts an object or a function.
+The mapper translates Cerbos attribute references to ChromaDB metadata field names. It accepts an object or a function. Each entry is either a metadata key or a config object:
+
+* `field` -- the metadata key
+* `required: true` -- asserts the key is present on every record, which permits `$ne` and `$nin`
+* `numericType` -- `"float"` for keys always stored as floating-point metadata (required for ordered comparisons against a fractional threshold), or `"integer"` for keys that only hold integers
+* `valueType: "boolean"` -- every value stored under the key is a boolean
 
 [source,typescript]
 ----
@@ -106,6 +124,7 @@ const result = queryPlanToChromaDB({
   fieldNameMapper: {
     "request.resource.attr.aBool": "aBool",
     "request.resource.attr.aString": "title",
+    "request.resource.attr.score": { field: "score", required: true, numericType: "float" },
   },
 });
 
@@ -117,7 +136,7 @@ const result = queryPlanToChromaDB({
 });
 ----
 
-If a field is not found in the object mapper, the original Cerbos path is used as-is.
+If a field is not found in the object mapper, the original Cerbos path is used as-is. No record normally carries that key, so the filter silently selects nothing: map every attribute your policies reference.
 
 == Source code
 

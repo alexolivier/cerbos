@@ -6,18 +6,22 @@ include::ROOT:partial$version-check.adoc[]
 
 The `@cerbos/orm-convex` package converts a Cerbos xref:api:index.adoc#resources-query-plan[`PlanResources`] response into a link:https://convex.dev/[Convex] filter function. Authorization conditions are split between a database-level filter and an optional JavaScript post-filter for operators that Convex cannot express natively.
 
+The filter is a function of Convex's `FilterBuilder`, which only exists inside a Convex query. Call Cerbos from trusted code, such as a Convex action or your own backend, then translate the plan and query in an `internalQuery`. Never expose a public query that accepts a plan: a caller who can supply a plan can supply an `ALWAYS_ALLOWED` one.
+
+This adapter is an open source reference implementation maintained in the link:https://github.com/cerbos/query-plan-adapters[cerbos/query-plan-adapters] repository. It is not covered by Cerbos support.
+
 == Requirements
 
-* Cerbos >= v0.16
+* `@cerbos/core` `^0.32.0 || ^0.33.0` (peer dependency)
 * `@cerbos/http` or `@cerbos/grpc` client
 * Convex 1.x
-* Node.js >= 20.0.0
+* Node.js >= 22.0.0
 
 == Installation
 
 [source,bash]
 ----
-npm install @cerbos/orm-convex
+npm install @cerbos/orm-convex @cerbos/core
 ----
 
 == Supported operators
@@ -32,13 +36,13 @@ npm install @cerbos/orm-convex
 | `and`, `or`, `not` -- `q.and(...)`, `q.or(...)`, `q.not(...)`
 
 | Comparison
-| `eq`, `ne`, `lt`, `le`, `gt`, `ge` -- `q.eq`, `q.neq`, `q.lt`, `q.lte`, `q.gt`, `q.gte`
+| `eq`, `ne`, `lt`, `le`, `gt`, `ge` -- `q.eq`, `q.neq`, `q.lt`, `q.lte`, `q.gt`, `q.gte` (orderings are guarded to the literal's type)
 
 | Membership
 | `in` -- composed as `q.or(q.eq(field, v1), q.eq(field, v2), ...)`
 
-| Existence
-| `isSet` -- `q.neq(field, undefined)` or `q.eq(field, undefined)`
+| Null checks
+| `eq`/`ne` against `null`
 |===
 
 === Post-filter operators
@@ -50,13 +54,22 @@ The following operators cannot be expressed as Convex database filters. When enc
 | Category | Operators
 
 | String
-| `contains`, `startsWith`, `endsWith`
+| `contains`, `startsWith`, `endsWith`, `upperAscii`, `matches` (constant patterns in a safe RE2/JavaScript subset)
 
 | Collection
-| `hasIntersection`, `exists`, `exists_one`, `all`, `filter`, `map`, `lambda`
+| `hasIntersection`, `index`, `get-field`, `size`, `except`, `intersect`, `isSubset`, list and map literals
+
+| Quantifiers
+| `exists`, `exists_one`, `all`, and `filter`, `map`, `lambda` inside larger expressions
+
+| Arithmetic and conversion
+| `add`, `sub`, `mult`, `div`, `mod`, `string`, `double`, `int`, `timestamp`, `duration`, `timeSince`, `if`
+
+| Hierarchy
+| `hierarchy`, `ancestorOf`, `descendentOf`, `overlaps`
 |===
 
-For `and(...)` expressions with mixed operator types, the adapter splits the tree: database-pushable children go to `filter`, the rest go to `postFilter`. For `or(...)` with any unsupported child, the entire expression goes to `postFilter` to avoid missing results.
+For a root `and(...)` with mixed operator types, the result has `path: "split"`: database-pushable conjuncts go to `prefilter`, which only narrows the read, and `postFilter` evaluates the whole condition. For `or(...)` with any unsupported child, the entire expression goes to `postFilter` to avoid missing results.
 
 === `allowPostFilter` opt-in
 
@@ -64,12 +77,14 @@ By default, `queryPlanToConvex` throws when the query plan requires a `postFilte
 
 [source,typescript]
 ----
-const { kind, filter, postFilter } = queryPlanToConvex({
+const result = queryPlanToConvex({
   queryPlan,
   mapper,
   allowPostFilter: true,
 });
 ----
+
+`postFilter` is part of the authorization predicate. Apply it to every candidate in the same trusted function, before anything is returned.
 
 If your policies only use operators that Convex supports natively, `filter` alone enforces the full policy at the database level and this flag is not needed.
 
@@ -77,32 +92,74 @@ If your policies only use operators that Convex supports natively, `filter` alon
 
 [source,typescript]
 ----
-import { queryPlanToConvex, PlanKind } from "@cerbos/orm-convex";
+import type { PlanResourcesResponse } from "@cerbos/core";
+import { HTTP } from "@cerbos/http";
+import { PlanKind, queryPlanToConvex, type Mapper } from "@cerbos/orm-convex";
+import type { Expression, FilterBuilder } from "convex/server";
+import { v } from "convex/values";
 
-const queryPlan = await cerbos.planResources({
-  principal: { id: "user1", roles: ["USER"] },
-  resource: { kind: "document" },
-  action: "view",
+import { internal } from "./_generated/api";
+import type { DataModel, Doc } from "./_generated/dataModel";
+import { action, internalQuery } from "./_generated/server";
+
+const cerbos = new HTTP("http://localhost:3592");
+
+const mapper: Mapper = {
+  "request.resource.attr.ownerId": { field: "ownerId", nullable: false },
+  "request.resource.attr.status": { field: "status", nullable: false },
+};
+
+export const listDocuments = action({
+  args: {},
+  handler: async (ctx): Promise<Doc<"documents">[]> => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthenticated");
+
+    const plan = await cerbos.planResources({
+      principal: { id: identity.subject, roles: ["user"] },
+      resource: { kind: "document" },
+      action: "view",
+    });
+
+    // Convex arguments reject class instances; send the plan as plain JSON.
+    return await ctx.runQuery(internal.documents.listAllowed, {
+      queryPlan: JSON.parse(JSON.stringify(plan)),
+    });
+  },
 });
 
-const { kind, filter, postFilter } = queryPlanToConvex({
-  queryPlan,
-  mapper,
-  allowPostFilter: true,
+export const listAllowed = internalQuery({
+  args: { queryPlan: v.any() },
+  handler: async (ctx, { queryPlan }) => {
+    const result = queryPlanToConvex<
+      FilterBuilder<DataModel["documents"]>,
+      Expression<boolean>
+    >({
+      queryPlan: queryPlan as PlanResourcesResponse,
+      mapper,
+      allowPostFilter: true,
+    });
+
+    const table = ctx.db.query("documents");
+    if (result.kind === PlanKind.ALWAYS_DENIED) return [];
+    if (result.kind === PlanKind.ALWAYS_ALLOWED) return await table.collect();
+    switch (result.path) {
+      case "db":
+        return await table.filter(result.filter).collect();
+      case "split":
+        return (await table.filter(result.prefilter).collect()).filter(result.postFilter);
+      case "post":
+        return (await table.collect()).filter(result.postFilter);
+    }
+  },
 });
-
-if (kind === PlanKind.ALWAYS_DENIED) return [];
-
-if (kind === PlanKind.ALWAYS_ALLOWED && !postFilter) {
-  return await ctx.db.query("documents").collect();
-}
-
-let query = ctx.db.query("documents");
-if (filter) query = query.filter(filter);
-let results = await query.collect();
-if (postFilter) results = results.filter(postFilter);
-return results;
 ----
+
+A `CONDITIONAL` result's `path` indicates which fields it carries:
+
+* `"db"` -- `filter`, the whole condition
+* `"split"` -- `prefilter`, which narrows the read, and `postFilter`, the whole condition
+* `"post"` -- `postFilter`, the whole condition
 
 == Field mapper
 
@@ -119,13 +176,28 @@ const mapper = (path) => ({
 });
 ----
 
-The `field` property rewrites a Cerbos path to a Convex document field. Dot notation is supported for nested fields. If the mapper is omitted, the adapter uses query plan paths as-is.
+The `field` property rewrites a Cerbos path to a Convex document field. Dot notation is supported for nested fields. Every attribute path the plan references must have a mapper entry, or translation throws `No mapper entry for <reference>`. Use `{}` if the document field is named like the plan path.
+
+The `nullable` property declares that the field may be absent from a document. Predicates on nullable fields are evaluated by `postFilter`, because Convex's filter engine cannot tell an absent field from `null`. Set `nullable: false` on fields that are always stored and never `null` to keep their comparisons in the database filter.
+
+== NULL attribute representation
+
+The query plan is the same whether your application sends a `NULL` field to `CheckResources` as an explicit `null` or omits the attribute. Set `nullAttributeRepresentation` to tell the adapter which convention you use:
+
+* `"omitted"` (default) -- every mapper entry that does not declare `nullable` is treated as `nullable: true`, so its comparisons require `allowPostFilter: true`, and null comparison operands are rejected
+* `"explicit"` -- `null` is compared as a value
+
+[source,typescript]
+----
+queryPlanToConvex({ queryPlan, mapper, nullAttributeRepresentation: "explicit" });
+----
 
 == Limitations
 
 * String and collection operators are evaluated as a JavaScript `postFilter` after the database query returns. These conditions do not reduce the number of documents read from the database.
 * For `or(...)` expressions where any child uses an unsupported operator, the entire OR is evaluated via `postFilter`.
 * The `in` operator is composed as multiple `eq` comparisons joined with `or`, which may be less efficient for large value lists.
+* Shapes the adapter cannot express, such as `matches` patterns outside the supported subset or `filter()`/`map()` in a boolean position, throw `UnsupportedQueryPlanError` (a subclass of `Error`). A missing mapper entry, or a plan that needs a `postFilter` when `allowPostFilter` is not `true`, throws a plain `Error`.
 
 == Source code
 

@@ -9,11 +9,13 @@ include::ROOT:partial$version-check.adoc[]
 
 The `cerbos-sqlalchemy` package converts a Cerbos xref:api:index.adoc#resources-query-plan[`PlanResources`] response into a SQLAlchemy `Select` instance. The resulting query object can be extended with additional `where` clauses or column selections before execution.
 
+This adapter is an open source reference implementation maintained in the link:https://github.com/cerbos/query-plan-adapters[cerbos/query-plan-adapters] repository. It is not covered by Cerbos support.
+
 == Requirements
 
-* Cerbos >= v0.16
-* link:https://github.com/cerbos/cerbos-sdk-python[Cerbos Python SDK]
+* link:https://github.com/cerbos/cerbos-sdk-python[Cerbos Python SDK] >= 0.10.4 (HTTP or gRPC client)
 * SQLAlchemy >= 1.4 / 2.0
+* Python >= 3.10
 
 == Installation
 
@@ -24,9 +26,13 @@ pip install cerbos-sqlalchemy
 
 == Supported operators
 
-`and`, `or`, `not`, `eq`, `ne`, `lt`, `gt`, `le` (`lte`), `ge` (`gte`), `in`
+* Logical and comparison: `and`, `or`, `not`, `eq`, `ne`, `lt`, `gt`, `le` (`lte`), `ge` (`gte`), `in`, including value-first and field-to-field forms and ternaries
+* String: `contains`, `startsWith`, `endsWith` (escaped `LIKE`), `size()`, `upperAscii()`, `string()` over text and boolean columns
+* Arithmetic: `+`, `-`, `*`, `/` by a constant
+* Collections: `exists` and `all` over a literal list (such as a principal attribute) or a list built from attributes; `size()`, constant indexing and literal membership over JSON or PostgreSQL array columns declared in `collection_columns`
+* Timestamps, including `timestamp(x) ± duration(...)` against a timestamp literal, and hierarchies
 
-Other operators (for example, math operators) can be handled programmatically and attached to the query via `query.where(...)`.
+Operators such as `%`, `int()`, `double()`, `matches()`, and collection macros over a related table are refused by default. Supply an implementation with `operator_override_fns` (see <<Overriding default operators>>).
 
 == Usage
 
@@ -71,6 +77,8 @@ attr_map = {
 
 query = get_query(plan, LeaveRequest, attr_map)
 ----
+
+`get_query` returns a `Select` for all three plan kinds: an `ALWAYS_DENIED` plan returns `select(LeaveRequest).where(False)`, so you don't need to branch on the plan kind. `table` accepts a Core `Table`, a legacy `declarative_base()` model, or a SQLAlchemy 2.0 `DeclarativeBase` subclass.
 
 === Multi-table joins
 
@@ -122,6 +130,55 @@ query = get_query(
     },
 )
 ----
+
+An override that cannot translate what it was handed should raise `UnsupportedPlanError`.
+
+== NULL attribute representation
+
+The query plan is the same however your application represents a `NULL` column in the attributes it sends to `CheckResources`. Pass `null_attribute_representation` to tell the adapter which convention you use:
+
+* `"omitted"` (default) -- `NULL` columns are left out of the resource attributes, and a `NULL` column is denied under both polarities
+* `"explicit"` -- `NULL` columns are sent as explicit `None` values, and `== null` translates to `IS NULL`
+
+[source,python]
+----
+get_query(plan, Resource, attr_map, null_attribute_representation="explicit")
+----
+
+To declare the convention per attribute, pass `attribute_null_representation`, a dictionary of attribute references to `"explicit"` or `"omitted"`. The call-level option covers every undeclared attribute.
+
+== Collection columns
+
+`size()`, constant indexing (`R.attr.tags[0]`) and literal membership need to know how a collection is stored in a single column. Declare it with `collection_columns`:
+
+[source,python]
+----
+from cerbos_sqlalchemy import CollectionColumn, get_query
+
+query = get_query(
+    plan,
+    Resource,
+    attr_map,
+    collection_columns={
+        # PostgreSQL JSON/JSONB, MySQL JSON, or SQLite JSON text
+        "request.resource.attr.tags": CollectionColumn(Resource.tags, "json"),
+        # PostgreSQL array of text, varchar, boolean, integer or smallint
+        "request.resource.attr.labels": CollectionColumn(Resource.labels, "pgArray"),
+    },
+)
+----
+
+== Database collation
+
+Cerbos string comparisons are case-sensitive and byte-exact. Columns in `attr_map` must use a byte-exact collation, otherwise the filter can return rows the policy denies:
+
+* MySQL: `utf8mb4_0900_bin`, also set on every connection with `SET NAMES utf8mb4 COLLATE utf8mb4_0900_bin`
+* PostgreSQL: the `"C"` collation on every column a policy orders with `<`, `<=`, `>` or `>=`
+* SQLite: `PRAGMA case_sensitive_like = ON` on every connection, because `LIKE` ignores column collation
+
+== Limitations
+
+A plan shape the adapter cannot express raises `cerbos_sqlalchemy.UnsupportedPlanError`, a subclass of `ValueError`, rather than return a broader query. Invalid configuration, such as an unmapped attribute or a missing `table_mapping`, raises `ValueError`, `KeyError` or `TypeError`.
 
 == Source code
 

@@ -6,6 +6,8 @@ include::ROOT:partial$version-check.adoc[]
 
 The Cerbos xref:api:index.adoc#resources-query-plan[`PlanResources` API] returns a query plan describing which resources a principal can access for a given action. Cerbos provides reference implementations of query plan adapters that convert that response into native query filters for your data layer, so authorization conditions are evaluated at the database level rather than in application code. Use these adapters as-is or as a starting point to build your own.
 
+The adapters are open source reference implementations maintained in the link:https://github.com/cerbos/query-plan-adapters[cerbos/query-plan-adapters] repository. They are not covered by Cerbos support.
+
 
 == Available adapters
 
@@ -36,4 +38,32 @@ The Cerbos xref:api:index.adoc#resources-query-plan[`PlanResources` API] returns
 | xref:query-plan-adapters/sqlalchemy.adoc[SQLAlchemy]
 | Python
 | SQLAlchemy (PostgreSQL, MySQL, SQLite, Oracle, SQL Server)
+
+| xref:query-plan-adapters/ent.adoc[Ent]
+| Go
+| Ent (PostgreSQL, MySQL, SQLite)
+
+| xref:query-plan-adapters/pgx.adoc[pgx]
+| Go
+| PostgreSQL via pgx
+
+| xref:query-plan-adapters/jpa.adoc[JPA]
+| Java
+| Jakarta Persistence criteria API (Hibernate ORM, Quarkus, Jakarta EE, Micronaut)
+
+| xref:query-plan-adapters/spring-data.adoc[Spring Data JPA]
+| Java
+| Spring Data JPA `Specification`
+
+| xref:query-plan-adapters/elasticsearch-java.adoc[Elasticsearch]
+| Java
+| Elasticsearch Query DSL
+
+| xref:query-plan-adapters/activerecord.adoc[ActiveRecord]
+| Ruby
+| ActiveRecord (PostgreSQL, MySQL, SQLite)
+
+| xref:query-plan-adapters/efcore.adoc[Entity Framework Core]
+| C#
+| Entity Framework Core (SQL Server, PostgreSQL, SQLite)
 |===

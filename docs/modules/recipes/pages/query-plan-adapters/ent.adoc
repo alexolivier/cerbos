@@ -1,0 +1,192 @@
+include::ROOT:partial$attributes.adoc[]
+
+= Ent adapter
+
+include::ROOT:partial$version-check.adoc[]
+
+The `github.com/cerbos/query-plan-adapters/ent` module converts a Cerbos xref:api:index.adoc#resources-query-plan[`PlanResources`] response into an link:https://entgo.io[Ent] SQL predicate. The resulting `*sql.Predicate` can be applied to any generated query and composes with Ent's own predicates, `Limit`, and `Offset`.
+
+This adapter is an open source reference implementation maintained in the link:https://github.com/cerbos/query-plan-adapters[cerbos/query-plan-adapters] repository. It is not covered by Cerbos support.
+
+== Requirements
+
+* link:https://github.com/cerbos/cerbos-sdk-go[Cerbos Go SDK] v0.4
+* `entgo.io/ent` v0.14
+* SQLite, PostgreSQL, or MySQL 8.0.17+
+* Go >= 1.27.3
+
+== Installation
+
+[source,bash]
+----
+go get github.com/cerbos/query-plan-adapters/ent
+----
+
+== Supported operators
+
+[cols="1,2", options="header"]
+|===
+| Category | Operators
+
+| Logical
+| `and`, `or`, `not`, `if` (ternary)
+
+| Comparison
+| `eq`, `ne`, `lt`, `le`, `gt`, `ge`
+
+| Membership
+| `in`, `hasIntersection`, `isSubset`, `intersect`, `except`
+
+| String
+| `contains`, `startsWith`, `endsWith`, `upperAscii`, `string()`
+
+| Existence
+| `has`
+
+| Collection
+| `exists`, `exists_one`, `all`, `filter`, `map`, `size` -- correlated subqueries against the relation table
+
+| Arithmetic
+| `add`, `sub`, `mult`, `div`, `mod`
+
+| Temporal
+| `timestamp`, `duration`, `timeSince` -- folded into the constant side of the comparison
+
+| Hierarchy
+| `hierarchy`, `ancestorOf`, `descendentOf`, `overlaps`
+|===
+
+Every value from the plan is a bound parameter, and quoting and placeholders follow the configured dialect.
+
+== Usage
+
+[source,go]
+----
+import (
+    "entgo.io/ent/dialect"
+    entsql "entgo.io/ent/dialect/sql"
+    "github.com/cerbos/cerbos-sdk-go/cerbos"
+    cerbosent "github.com/cerbos/query-plan-adapters/ent"
+
+    "example.com/app/ent"
+    "example.com/app/ent/contact"
+)
+
+var mapper = cerbosent.MapperMap{
+    "request.resource.attr.ownerId": {Column: contact.FieldOwnerID},
+    "request.resource.attr.status":  {Column: contact.FieldStatus},
+}
+
+func listContacts(ctx context.Context, c *cerbos.GRPCClient, db *ent.Client, principal *cerbos.Principal) ([]*ent.Contact, error) {
+    plan, err := c.PlanResources(ctx, principal, cerbos.NewResource("contact", ""), "read")
+    if err != nil {
+        return nil, err
+    }
+
+    result, err := cerbosent.Translate(plan.PlanResourcesResponse, contact.Table, mapper,
+        cerbosent.WithDialect(dialect.Postgres))
+    if err != nil {
+        return nil, err
+    }
+
+    switch result.Kind {
+    case cerbosent.KindAlwaysDenied:
+        return nil, nil
+    case cerbosent.KindAlwaysAllowed:
+        return db.Contact.Query().All(ctx)
+    case cerbosent.KindConditional:
+        return db.Contact.Query().
+            Where(func(s *entsql.Selector) { s.Where(result.Predicate) }).
+            All(ctx)
+    }
+    return nil, fmt.Errorf("unexpected plan kind %d", result.Kind)
+}
+----
+
+`Translate` takes the resource's table name (Ent's generated `<entity>.Table`) and a mapper. `Result.Predicate` is never nil: it renders `FALSE` for `KindAlwaysDenied` and `TRUE` for `KindAlwaysAllowed`, so applying it without switching on `Kind` still returns exactly the rows the PDP allows.
+
+=== Dialects
+
+`WithDialect` accepts `dialect.SQLite` (the default), `dialect.Postgres`, and `dialect.MySQL`, and must match the dialect of the Ent client the predicate is handed to. Any other value, including `""` and aliases such as `postgresql`, is a configuration error.
+
+== Field mapper
+
+A `Mapper` resolves each attribute reference in the plan to storage. Use `MapperMap` for a static mapping or `MapperFunc` for a function. Resolution is fail-closed: an unmapped reference is an error, never a guessed column name.
+
+[cols="1,3", options="header"]
+|===
+| `Entry` field | Use
+
+| `Column`
+| Column on the row being read (the resource row, or the element row inside a collection)
+
+| `ValueType`
+| `ValueTimestamp`, `ValueBool`, `ValueString`, `ValueNumber`, or `ValueDefault`. The plan carries no types, so declare them where storage needs it -- for example, `ValueTimestamp` on every timestamp column and `ValueBool` on boolean columns passed to `string()`
+
+| `NullConvention`
+| Per-attribute NULL convention (see <<null-representation>>)
+
+| `Relation`
+| A collection- or object-valued attribute stored in another table
+
+| `ScalarRelation`
+| A scalar read through a to-one relation (`R.attr.parent.name`), rendered as a correlated scalar subquery
+|===
+
+== Relation mapping
+
+Collection attributes are translated into correlated subqueries against the related table. A relation can reach through intermediate tables with `Via []Hop`, and `SubqueryFilter` declares a predicate your application applies to its own reads of that table (for example, a soft-delete column), so the subquery examines the same rows your application loaded into the resource attributes.
+
+[source,go]
+----
+tags := &cerbosent.Relation{
+    Table:        "contact_tag",
+    SourceColumn: "id",         // column on the parent row
+    TargetColumn: "contact_id", // matching column on contact_tag
+    Field:        &cerbosent.Entry{Column: "name"},                     // scalar elements
+    Fields:       map[string]cerbosent.Entry{"name": {Column: "name"}}, // object elements (t.name)
+    SubqueryFilter: []cerbosent.Restriction{
+        {Column: "deleted_at", Op: cerbosent.RestrictIsNull},
+    },
+}
+
+mapper := cerbosent.MapperMap{
+    "request.resource.attr.tags":      {Relation: tags},
+    "request.resource.attr.createdAt": {Column: "created_at", ValueType: cerbosent.ValueTimestamp},
+    "request.resource.attr.company": {
+        Column:         "name",
+        ScalarRelation: &cerbosent.Relation{Table: "company", SourceColumn: "company_id", TargetColumn: "id"},
+    },
+}
+----
+
+`SubqueryFilter` supports `RestrictEq`, `RestrictNe`, `RestrictIsNull`, `RestrictIsNotNull`, `RestrictIn`, and `RestrictNotIn`. Ent interceptors, privacy rules, and default scopes do not reach the subquery, so declare them here.
+
+[#null-representation]
+== NULL representation
+
+The planner emits the same `eq(attr, null)` node whether a NULL column is sent to `CheckResources` as an explicit `null` or omitted, so you have to tell the adapter which convention you use:
+
+* `NullOmitted` (default) -- null operands are rejected, because an `IS NULL` filter would over-grant rows the PDP denies
+* `NullExplicit` -- `== null` translates to `IS NULL`
+
+[source,go]
+----
+cerbosent.Translate(plan.PlanResourcesResponse, contact.Table, mapper,
+    cerbosent.WithNullRepresentation(cerbosent.NullExplicit))
+----
+
+To mix conventions in one policy, set `NullConvention` on each `Entry` to `NullConventionExplicit` or `NullConventionOmitted`. The call option then covers only undeclared attributes.
+
+== Limitations
+
+* Every shape the adapter cannot express returns an error wrapping `cerbosent.ErrUnsupported`, never a broader predicate. Use `errors.Is(err, cerbosent.ErrUnsupported)` to distinguish this from a mapping or configuration error.
+* `matches` is refused, because no SQL engine implements CEL's RE2 regular expression dialect.
+* `int()` and `double()` casts are refused, because SQL `CAST` parses and rounds differently from CEL.
+* `R.attr.a + R.attr.b` between two columns is refused unless one side is declared `ValueString`.
+* String equality and ordering follow the database collation. Use a byte-exact collation on every column a policy compares: `PRAGMA case_sensitive_like = ON` on SQLite, the `"C"` collation on PostgreSQL, and `utf8mb4_0900_bin` on MySQL. A case-insensitive or linguistic collation over-grants, and the adapter cannot detect it.
+* On SQLite, store timestamps in `cerbosent.SQLiteTimestampLayout` so that text comparison matches chronological order.
+
+== Source code
+
+link:https://github.com/cerbos/query-plan-adapters/tree/main/ent[cerbos/query-plan-adapters/ent]

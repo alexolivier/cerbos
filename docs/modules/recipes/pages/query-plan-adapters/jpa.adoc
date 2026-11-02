@@ -1,0 +1,178 @@
+include::ROOT:partial$attributes.adoc[]
+
+= JPA adapter
+
+include::ROOT:partial$version-check.adoc[]
+
+The `cerbos-jpa` package converts a Cerbos xref:api:index.adoc#resources-query-plan[`PlanResources`] response into a link:https://jakarta.ee/specifications/persistence/[Jakarta Persistence] (JPA) criteria API `Predicate` for a `CriteriaQuery`. It requires no framework beyond a JPA provider, so it works with plain Hibernate ORM, Quarkus, Jakarta EE, Micronaut Data JPA, or anything else that provides an `EntityManager`. On Spring Data JPA, use the xref:query-plan-adapters/spring-data.adoc[Spring Data adapter], which wraps this adapter and returns a `Specification`.
+
+This adapter is an open source reference implementation maintained in the link:https://github.com/cerbos/query-plan-adapters[cerbos/query-plan-adapters] repository. It is not covered by Cerbos support.
+
+== Requirements
+
+* link:https://github.com/cerbos/cerbos-sdk-java[Cerbos Java SDK]
+* JDK 17+
+* Jakarta Persistence 3.1 with Hibernate ORM 6.6, or Jakarta Persistence 3.2 with Hibernate ORM 7. Other providers (EclipseLink, OpenJPA) are untested.
+* A byte-exact collation on every string column referenced by the mapping (see <<jpa-collation>>)
+
+== Installation
+
+The adapter is not published to Maven Central yet. Build it from a checkout of the link:https://github.com/cerbos/query-plan-adapters[query-plan-adapters] repository and install it into your local Maven repository:
+
+[source,bash]
+----
+cd jpa
+./gradlew publishToMavenLocal
+----
+
+Then add `mavenLocal()` to your repositories and depend on it:
+
+[source,kotlin]
+----
+repositories {
+    mavenLocal()
+    mavenCentral()
+}
+
+dependencies {
+    implementation("dev.cerbos:cerbos-jpa:0.1.0-alpha.1")
+    implementation("dev.cerbos:cerbos-sdk-java:0.20.1")
+}
+----
+
+`cerbos-sdk-java` 0.20.1 requires `protobuf-java` 4.35.1 or later at runtime. If your build resolves an older version, add `com.google.protobuf:protobuf-java:4.35.1` as a direct dependency.
+
+[#jpa-supported-operators]
+== Supported operators
+
+[cols="1,2", options="header"]
+|===
+| Category | Operators
+
+| Logical
+| `and`, `or`, `not` -- `cb.and`, `cb.or`, `cb.not`
+
+| Comparison
+| `eq`, `ne`, `lt`, `gt`, `le`, `ge` -- including value-first and field-to-field forms; a `null` operand becomes `isNull` / `isNotNull`
+
+| Membership
+| `in`, `hasIntersection` -- `path.in(values)`, or a correlated `EXISTS` over a relation
+
+| String
+| `contains`, `startsWith`, `endsWith` -- escaped `LIKE`; `matches` where `LIKE` can express the pattern exactly
+
+| Collection
+| `exists`, `exists_one`, `all`, `filter`, `map`, `size`, `except`, `isSubset` -- correlated subqueries with CEL's three-valued semantics
+
+| Arithmetic
+| `add`, `sub`, `mult`, `div`, `mod` (over `int()` of an `Integer` column), string concatenation
+
+| Other
+| `timestamp()` and `duration()` comparisons, `timeSince()`, `int()`, `string()`, `upperAscii()`, `hierarchy()`, ternary expressions
+|===
+
+The adapter repository lists the exact translation of each operator.
+
+== Usage
+
+[source,java]
+----
+import dev.cerbos.queryplan.jpa.AttributeMapping;
+import dev.cerbos.queryplan.jpa.JpaQueryPlanAdapter;
+import dev.cerbos.queryplan.jpa.QueryPlanFilter;
+
+static final Map<String, AttributeMapping> MAPPING = Map.of(
+    "request.resource.attr.ownerId",    AttributeMapping.field("owner.id"),
+    "request.resource.attr.department", AttributeMapping.field("department"),
+    "request.resource.attr.tags",       AttributeMapping.relation("tags", Map.of(
+        "name", AttributeMapping.field("name"))));
+
+List<Contact> viewableContacts(CerbosBlockingClient cerbos, EntityManager em) {
+    PlanResourcesResult plan = cerbos.plan(
+        Principal.newInstance("alice", "USER"),
+        Resource.newInstance("contact"),
+        List.of("view"));
+
+    if (plan.isAlwaysDenied()) {
+        return List.of();
+    }
+
+    QueryPlanFilter allowed = JpaQueryPlanAdapter.toFilter(plan, MAPPING);
+
+    CriteriaBuilder cb = em.getCriteriaBuilder();
+    CriteriaQuery<Contact> query = cb.createQuery(Contact.class);
+    Root<Contact> root = query.from(Contact.class);
+    query.select(root).where(allowed.toPredicate(root, query, cb));
+    return em.createQuery(query).getResultList();
+}
+----
+
+The filter covers every plan kind: an always-allowed plan produces an always-true predicate (`isAlwaysAllowed()` reports this if you prefer to omit the `WHERE` clause), an always-denied plan produces an always-false predicate, and a conditional plan produces the translated predicate tree. Checking `isAlwaysDenied()` first only skips the database round trip.
+
+A `QueryPlanFilter` is immutable and can be shared, but each `toPredicate` call returns a `Predicate` bound to the `Root` it was given. Call `toPredicate` once per query; for example, a pager that runs a `COUNT` alongside its select calls it twice. Combine the predicate with your own conditions using `cb.and(...)`.
+
+WARNING: Use the predicate only in `SELECT` queries. Hibernate's multi-table bulk delete clears `@ElementCollection` and join tables with the same predicate, removing the rows the correlated subquery reads. Select the IDs first, then delete by ID.
+
+[#jpa-field-mapper]
+== Field mapper
+
+Map each `request.resource.attr.<name>` to a JPA path or association:
+
+* `AttributeMapping.field("path")` -- a column, an `@Embedded` dotted path (`"details.width"`), or a to-one path (`"owner.id"`, translated as a `LEFT` join)
+* `AttributeMapping.relation("tags")` -- an `@ElementCollection` whose elements are the values
+* `AttributeMapping.relation("tags", "name")` -- a `@OneToMany` where `name` stands in for the element in `in` and `hasIntersection`
+* `AttributeMapping.relation("tags", Map.of("name", field("name")))` -- a `@OneToMany` with member fields for lambda bodies such as `t.name`; nested values can be further `relation(...)` mappings for multi-hop chains
+* `.withPositionField("position")` -- declares the field holding each element's zero-based index, so positional reads such as `R.attr.tags[0]` translate
+
+Relations are reached through criteria association joins, so Hibernate applies the association's `@SQLRestriction`, enabled `@Filter` definitions and discriminator to the subquery. Do not re-declare those restrictions in the mapping.
+
+=== Options
+
+`JpaQueryPlanAdapter.Options` holds every setting. `toFilter(plan, mapping)` is shorthand for `toFilter(plan, Options.of(mapping))`.
+
+[source,java]
+----
+Options options = Options.of(MAPPING)
+    .withOperatorOverrides(overrides)
+    .withNullAttributeRepresentation(NullAttributeRepresentation.EXPLICIT)
+    .withMaxMacroDepth(8);
+
+QueryPlanFilter allowed = JpaQueryPlanAdapter.toFilter(plan, options);
+----
+
+* `withOperatorOverrides` -- a `Map<String, OperatorFunction>` that replaces the translation of individual operators, for example a database-specific `regexp_like` for `matches`
+* `withNullAttributeRepresentation` -- `OMITTED` (default) or `EXPLICIT`, matching how your application sends a `NULL` column to Cerbos: omitted from the attributes, or as an explicit `null`. Under `OMITTED`, a `null` comparison against an undeclared attribute throws rather than risk returning rows the PDP denies. You can also declare the convention per attribute with `AttributeMapping.field("path", NullAttributeRepresentation.EXPLICIT)`.
+* `withMaxMacroDepth` -- the maximum nesting of collection macros (default `5`, or the `dev.cerbos.queryplan.jpa.maxMacroDepth` system property)
+
+[#jpa-collation]
+== Database collation requirements
+
+CEL string comparison is exact, but the adapter emits string predicates without collation control. A case- or accent-insensitive collation returns rows the PDP denied. Every string column referenced by the mapping must use a byte-exact collation:
+
+* MySQL: `utf8mb4_0900_bin` (MySQL 8.0.17+). Case-sensitive collations such as `utf8mb4_0900_as_cs` are not sufficient.
+* SQL Server: a `*_CS_AS` collation, for example `Latin1_General_100_CS_AS`
+* PostgreSQL: use the `"C"` collation for columns compared by ordering, and avoid nondeterministic ICU collations and `citext`
+
+[#jpa-limitations]
+== Limitations
+
+The adapter throws instead of emitting a best-effort filter. All three exception types extend `IllegalArgumentException`:
+
+* `UnsupportedPlanShapeException` -- a valid plan that the criteria API cannot express faithfully
+* `UnmappedAttributeException` -- the mapping does not cover an attribute in the plan, or maps it the wrong way for its operator
+* `MalformedPlanException` -- the plan breaks the planner's wire contract
+
+Unsupported shapes include:
+
+* `matches` patterns that `LIKE` cannot express exactly, unless you register a `matches` override
+* List indexing on a relation without `withPositionField`, and list equality against two or more elements without it
+* Type casts other than the supported `int()` and `string()` forms
+* `timestamp()` over a `LocalDateTime`, `java.util.Date` or `String` column (use `Instant` or `OffsetDateTime`, or register an override), and timestamp comparisons other than against a constant
+* `size(intersect(...))`
+* Collection macros nested deeper than the configured maximum
+
+The planner resolves `now()` when it creates the plan, so re-plan per request if a time window must track the clock.
+
+== Source code
+
+link:https://github.com/cerbos/query-plan-adapters/tree/main/jpa[cerbos/query-plan-adapters/jpa]

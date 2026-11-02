@@ -1,0 +1,166 @@
+include::ROOT:partial$attributes.adoc[]
+
+= Elasticsearch adapter
+
+include::ROOT:partial$version-check.adoc[]
+
+The `dev.cerbos.queryplan.elasticsearch` Java package converts a Cerbos xref:api:index.adoc#resources-query-plan[`PlanResources`] response into an link:https://www.elastic.co/elasticsearch[Elasticsearch] Query DSL clause, returned as a `Map<String, Object>` of plain JDK values. Place the clause in a filter context to restrict searches to the documents a principal is allowed to access.
+
+This adapter is an open source reference implementation maintained in the link:https://github.com/cerbos/query-plan-adapters[cerbos/query-plan-adapters] repository. It is not covered by Cerbos support.
+
+== Requirements
+
+* link:https://github.com/cerbos/cerbos-sdk-java[Cerbos Java SDK] 0.13.0 or later
+* `protobuf-java` matching the version your Cerbos Java SDK release was generated with (4.35.1 for SDK 0.20.1)
+* Elasticsearch 8.x
+* Java 17 or later
+
+== Installation
+
+The adapter is not published to Maven Central yet. Copy the whole `src/main/java/dev/cerbos/queryplan/elasticsearch/` directory from the link:https://github.com/cerbos/query-plan-adapters/tree/main/elasticsearch-java[source repository] into your project, adjust each file's `package` declaration, and add the dependencies:
+
+[source,kotlin]
+----
+dependencies {
+    implementation("dev.cerbos:cerbos-sdk-java:0.20.1")
+    implementation("com.google.protobuf:protobuf-java:4.35.1")
+}
+----
+
+The Cerbos Java SDK declares protobuf at runtime scope only, and an older runtime pulled in transitively by gRPC fails at the first message decode, so add `protobuf-java` explicitly.
+
+== Supported operators
+
+[cols="1,2", options="header"]
+|===
+| Category | Operators
+
+| Logical
+| `and`, `or`, `not` -- `bool.must`, `bool.should`, `bool.must_not`
+
+| Comparison
+| `eq`, `ne`, `lt`, `le`, `gt`, `ge` -- `term`, `exists` with `bool.must_not`, `range`
+
+| Membership
+| `in`, `hasIntersection` -- `terms`
+
+| String
+| `contains`, `startsWith`, `endsWith` -- `wildcard`, `prefix`; `matches` -- `prefix` for `^literal`, `regexp` for fully anchored patterns in a safe subset
+
+| Collection
+| `exists`, negated `all`, `hasIntersection` with `map` -- `nested` queries over fields declared as nested paths
+
+| Size
+| `size()` emptiness checks (`> 0`, `>= 1`, `!= 0`) -- `nested` with `match_all`, or `exists`
+
+| Hierarchy
+| `ancestorOf`, `descendentOf`, `overlaps` against a constant path -- `prefix`, `terms`
+
+| Timestamp
+| `timestamp()` comparisons -- `term` or `range` against a `date` field, millisecond-exact values only
+|===
+
+The adapter never generates Painless scripts. Shapes the Query DSL cannot express exactly throw rather than return a filter that might over-grant. See <<limitations>>.
+
+== Usage
+
+[source,java]
+----
+import dev.cerbos.queryplan.elasticsearch.ElasticsearchQueryPlanAdapter;
+import dev.cerbos.queryplan.elasticsearch.ElasticsearchQueryPlanAdapter.Options;
+import dev.cerbos.queryplan.elasticsearch.ElasticsearchQueryPlanAdapter.Result;
+import dev.cerbos.queryplan.elasticsearch.ElasticsearchQueryPlanAdapter.ScalarType;
+
+static final Options OPTIONS = Options.of(Map.of(
+        "request.resource.attr.ownerId", "ownerId",
+        "request.resource.attr.public", "isPublic"))
+    .withScalarTypes(Map.of(
+        "ownerId", ScalarType.STRING,
+        "isPublic", ScalarType.BOOLEAN));
+
+PlanResourcesResult plan = cerbos.plan(
+        Principal.newInstance("alice", "user"),
+        Resource.newInstance("document"),
+        List.of("view"));
+
+Query authz = switch (ElasticsearchQueryPlanAdapter.toElasticsearchQuery(plan, OPTIONS)) {
+    case Result.AlwaysDenied denied -> null;
+    case Result.AlwaysAllowed allowed -> Query.of(q -> q.matchAll(m -> m));
+    case Result.Conditional conditional -> {
+        String json = new ObjectMapper().writeValueAsString(conditional.query());
+        yield Query.of(q -> q.withJson(new StringReader(json)));
+    }
+};
+if (authz == null) {
+    return List.of();
+}
+
+return es.search(s -> s.index("documents").query(q -> q.bool(b -> b.filter(authz))),
+                Document.class)
+        .hits().hits().stream().map(h -> h.source()).toList();
+----
+
+`toElasticsearchQuery` accepts either the SDK's `PlanResourcesResult` or the protobuf `PlanResourcesResponse` and returns a sealed `Result`. Always place `Conditional.query()` in a filter context (`bool.filter` or `constant_score`): authorization is not a relevance signal, and filters skip scoring and can be cached. To combine it with a search, put your query in `bool.must` and the Cerbos clause in `bool.filter`.
+
+== Options
+
+All mapping configuration is held in an immutable `Options` record. Start from `Options.of(fieldMap)`; each `with...` method returns a new instance.
+
+[source,java]
+----
+Options options = Options.of(fieldMap)
+    .withScalarTypes(scalarTypes)
+    .withNestedPaths(Set.of("tagObjects"))
+    .withCollectionFields(Set.of("tags"))
+    .withOperatorOverrides(overrides)
+    .withExplicitNullAttributes(Set.of("request.resource.attr.owner"));
+----
+
+* `fieldMap` -- maps Cerbos attribute references (resource and principal) to Elasticsearch field names. An unmapped attribute throws `UnmappedAttributeException`.
+* `scalarTypes` -- the CEL type (`STRING`, `NUMBER`, `BOOLEAN`, `TIMESTAMP`) of every compared field, keyed by Elasticsearch field name. Required, because Elasticsearch coerces a query term onto the field's mapped type (`"5"` matches the number `5`) while CEL treats cross-type equality as `false`. A comparison against an undeclared field throws.
+* `nestedPaths` -- arrays of objects, mapped as `nested`, that `exists`, `all`, or `hasIntersection` with `map` walk.
+* `collectionFields` -- flat scalar arrays whose `size()` a policy checks.
+* `operatorOverrides` -- an `OperatorFunction` per operator, taking the field name and value and returning a Query DSL clause.
+* `explicitNullAttributes` -- attributes your application sends to `check()` as explicit `null`. Elasticsearch does not index `null`, so `eq`, `ne`, and `in` over these attributes throw rather than give a different answer from the PDP.
+
+=== Nested collections
+
+Declare every array of objects that a collection macro walks, and map it as `nested` in the index:
+
+[source,java]
+----
+Options options = Options.of(Map.of(
+        "request.resource.attr.tags", "tags",
+        "request.resource.attr.tagObjects", "tagObjects"))
+    .withNestedPaths(Set.of("tagObjects"))
+    .withScalarTypes(Map.of("tags", ScalarType.STRING, "tagObjects.name", ScalarType.STRING));
+----
+
+Lambda variables resolve to the nested path, so `tagObjects.exists(t, t.name == "public")` becomes a `nested` query on `tagObjects.name`. Macros over a collection the PDP resolves at plan time, such as a principal attribute, need no declaration.
+
+== Index mapping requirements
+
+The adapter never sees your index mapping, so an incorrect mapping fails silently by returning documents the PDP denies.
+
+* Every mapped field must be `keyword`, `boolean`, a numeric type, or `date`. On an analyzed `text` field the emitted `term`, `prefix`, `wildcard`, and `regexp` queries match tokens rather than the stored value. If a field must be `text`, add a `keyword` sub-field and map to it (for example, `aString.keyword`).
+* Declared scalar types must agree with the mapping.
+* Collections walked by macros must be mapped as `nested` and declared in `nestedPaths`.
+* Fields compared with `timestamp()` must be mapped as `date`, with millisecond-exact values.
+* Hierarchy path fields must be `keyword`.
+
+[#limitations]
+== Limitations
+
+Unsupported shapes throw `UnsupportedPlanShapeException`. Unmapped or undeclared fields throw `UnmappedAttributeException`, and malformed plans throw `MalformedPlanException`. All three extend `IllegalArgumentException`. Unsupported shapes include:
+
+* Field-to-field comparisons, arithmetic over fields, casts, and CEL ternaries
+* `except`, `intersect`, `isSubset`, `exists_one`, and `filter` or `map` used as a condition
+* `size()` thresholds other than emptiness checks
+* Positive `all` and negated `exists` over a document collection, because Elasticsearch cannot distinguish an empty array from a missing field
+* Ordered array indexing such as `R.attr.tags[0]`
+* Positive comparisons with `null`
+* Regular expressions outside the safe subset, and timestamps with sub-millisecond precision
+
+== Source code
+
+link:https://github.com/cerbos/query-plan-adapters/tree/main/elasticsearch-java[cerbos/query-plan-adapters/elasticsearch-java]

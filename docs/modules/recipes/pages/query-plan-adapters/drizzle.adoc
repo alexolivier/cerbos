@@ -6,27 +6,31 @@ include::ROOT:partial$version-check.adoc[]
 
 The `@cerbos/orm-drizzle` package converts a Cerbos xref:api:index.adoc#resources-query-plan[`PlanResources`] response into a Drizzle ORM SQL expression. The resulting filter can be composed with your existing query builder chain.
 
+This adapter is an open source reference implementation maintained in the link:https://github.com/cerbos/query-plan-adapters[cerbos/query-plan-adapters] repository. It is not covered by Cerbos support.
+
 == Requirements
 
-* Cerbos >= v0.16
+* `@cerbos/core` `^0.32.0 || ^0.33.0` (peer dependency)
 * `@cerbos/http` or `@cerbos/grpc` client
-* Drizzle ORM (SQLite, PostgreSQL, MySQL, PlanetScale)
-* Node.js >= 20.0.0
+* `drizzle-orm` `^0.44.0 || ^0.45.0` (peer dependency) with SQLite, PostgreSQL or MySQL 8.0.17+. PlanetScale emits the same SQL as MySQL but is not tested.
+* Node.js >= 22.0.0
+* A byte-exact collation on mapped string columns (see <<drizzle-collation>>)
 
 == Installation
 
 [source,bash]
 ----
-npm install @cerbos/orm-drizzle
+npm install @cerbos/orm-drizzle @cerbos/core
 ----
 
 == Supported operators
 
 * Logical: `and`, `or`, `not`
 * Comparison: `eq`, `ne`, `lt`, `gt`, `le`, `ge`, `in`
-* String: `contains`, `startsWith`, `endsWith`
-* Existence: `isSet`
-* Collection: `hasIntersection`, `exists`, `exists_one`, `all`, `filter`
+* String: `contains`, `startsWith`, `endsWith`, `size()`, `+` (concatenation), `upperAscii()`, `matches()` (for RE2 patterns expressible as exact string predicates)
+* Null: `eq` / `ne` against `null` (see <<drizzle-null-attributes>>)
+* Collection: `hasIntersection`, `exists`, `exists_one`, `all`, `size`, `size(filter(...))`, `except`, `isSubset`, membership (including in `map()` and `filter()` results)
+* Other: arithmetic, ternaries, hierarchy operations, `timestamp()` comparisons with constant `duration()` shifts, `timeSince()`, index access
 * Relation-aware mappings with `EXISTS` subqueries
 
 == Usage
@@ -66,27 +70,31 @@ switch (result.kind) {
 
 == Field mapper
 
-The mapper associates Cerbos attribute references with Drizzle columns. It accepts:
+The mapper associates Cerbos attribute references with Drizzle columns. It accepts a plain object keyed by Cerbos attribute reference, or a function receiving the attribute reference and returning an entry. Each entry is one of:
 
-* A plain object with keys as Cerbos attribute references and values as Drizzle columns or SQL expressions
-* A function receiving the attribute reference and returning the column or expression
-* An object with a `column` property and an optional `transform` function for custom SQL translation
+* A Drizzle column
+* An object with a `column` property and options: `valueType: "timestamp"` for attributes compared with `timestamp()`, `indexable` (`"json"` or `"pgArray"`) for list columns accessed by index, and `nullAttributeRepresentation`
+* An object with a `transform` function (or a bare function) that builds the SQL for each comparison
+* An object with a `relation` property (see <<Relation mapping>>)
+
+A transform receives `{ operator, value }`, where `operator` is one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `in`, `contains`, `startsWith` or `endsWith`:
 
 [source,typescript]
 ----
 const result = queryPlanToDrizzle({
   queryPlan,
   mapper: {
-    "request.resource.attr.custom": {
-      column: sql`lower(${resources.title})`,
+    "request.resource.attr.title": {
       transform: ({ operator, value }) => {
-        if (operator !== "eq") throw new Error("Unsupported");
-        return eq(sql`lower(${resources.title})`, value.toLowerCase());
+        if (operator !== "eq") throw new Error(`Unsupported operator ${operator}`);
+        return eq(sql`lower(${resources.title})`, String(value).toLowerCase());
       },
     },
   },
 });
 ----
+
+Any attribute the plan references but the mapper does not resolve throws.
 
 == Relation mapping
 
@@ -131,11 +139,74 @@ const result = queryPlanToDrizzle({
 });
 ----
 
+The subquery reads the related table without any filtering. If your own reads of that table apply a predicate (soft delete, tenant, subtype), declare it as `subqueryFilter` on the relation. The predicate is ANDed into every subquery reached through the relation:
+
+[source,typescript]
+----
+"request.resource.attr.tags": {
+  relation: {
+    type: "many",
+    table: tags,
+    sourceColumn: resources.id,
+    targetColumn: tags.resourceId,
+    field: tags.name,
+    subqueryFilter: and(isNull(tags.deletedAt), eq(tags.kind, "label")),
+  },
+},
+----
+
+For a relation that stores scalar values, set `collectionValueType: "scalar"` together with the relation's `field`.
+
 == Collection operators
 
 * `hasIntersection` -- translates to `column IN (...)` for multi-valued attributes mapped as nested relations
-* `exists`, `exists_one`, `all` -- generate correlated `EXISTS` subqueries with the lambda variable scoped to the relation
-* `filter` -- Cerbos uses this during plan construction; the adapter discards the lambda since the filter is applied in Drizzle
+* `exists`, `exists_one`, `all` -- generate correlated `EXISTS` subqueries with the lambda variable scoped to the relation; over a literal list, each element is substituted into the lambda
+* `filter` -- supported inside `size(filter(...))` and membership checks. On its own, like `map()`, it returns a list rather than a boolean, which CEL evaluates to an error, so the condition denies the row
+* Two-variable macros such as `list.exists(i, v, ...)` throw
+
+[#drizzle-null-attributes]
+== NULL attribute representation
+
+The query plan is the same whether your application sends a `NULL` column to `CheckResources` as an explicit `null` or omits the attribute. Set `nullAttributeRepresentation` to tell the adapter which convention you use:
+
+* `"omitted"` (default) -- `x == null` matches no row, and a `NULL` column is excluded under both polarities
+* `"explicit"` -- `x == null` renders as `IS NULL`
+
+[source,typescript]
+----
+queryPlanToDrizzle({ queryPlan, mapper, nullAttributeRepresentation: "explicit" });
+----
+
+The convention can also be declared per attribute on a `{ column, nullAttributeRepresentation }` mapper entry.
+
+[#drizzle-collation]
+== Database collation
+
+Cerbos compares strings byte for byte. A case-insensitive collation can make the filter return rows the policy denies.
+
+* MySQL: use `utf8mb4_0900_bin`.
+* PostgreSQL: use the `"C"` collation on columns that policies order with `<`, `<=`, `>` or `>=`. Do not use nondeterministic ICU collations or `citext` for mapped attributes.
+* SQLite: do not apply `COLLATE NOCASE` to mapped columns.
+
+== Limitations
+
+Shapes the adapter cannot express throw `UnsupportedQueryPlanError` (a subclass of `Error`) rather than emit a broader filter. Catch it to deny the request or fall back to per-resource `checkResource` calls:
+
+[source,typescript]
+----
+import { queryPlanToDrizzle, UnsupportedQueryPlanError } from "@cerbos/orm-drizzle";
+
+try {
+  const result = queryPlanToDrizzle({ queryPlan, mapper });
+} catch (error) {
+  if (error instanceof UnsupportedQueryPlanError) {
+    // deny, or fall back to per-resource checks
+  }
+  throw error;
+}
+----
+
+Mapper misconfiguration, such as a reference with no mapping, throws a plain `Error`.
 
 == Source code
 

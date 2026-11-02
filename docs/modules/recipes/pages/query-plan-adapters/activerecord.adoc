@@ -1,0 +1,162 @@
+include::ROOT:partial$attributes.adoc[]
+
+= ActiveRecord adapter
+
+include::ROOT:partial$version-check.adoc[]
+
+The `cerbos-activerecord` gem converts a Cerbos xref:api:index.adoc#resources-query-plan[`PlanResources`] response into an `ActiveRecord::Relation`. The result is an ordinary relation, so you can add scopes, ordering, pagination, and eager loading as usual.
+
+This adapter is an open source reference implementation maintained in the link:https://github.com/cerbos/query-plan-adapters[cerbos/query-plan-adapters] repository. It is not covered by Cerbos support.
+
+The adapter is fail-closed: a plan shape it cannot translate exactly raises a `Cerbos::ActiveRecord::Error` rather than emitting an approximate filter.
+
+== Requirements
+
+* link:https://github.com/cerbos/cerbos-sdk-ruby[Cerbos Ruby SDK] (`cerbos` gem)
+* ActiveRecord >= 7.1, < 9.0
+* Ruby >= 3.3
+
+The Cerbos Ruby SDK is the expected client but not a runtime dependency. The `plan:` argument also accepts a parsed `PlanResources` JSON hash (for example, from the REST API or a cache), or any object with `kind` and `condition`.
+
+== Installation
+
+The gem is not published to RubyGems yet. Install it from the repository:
+
+[source,ruby]
+----
+# Gemfile
+gem "cerbos"
+gem "cerbos-activerecord",
+  git: "https://github.com/cerbos/query-plan-adapters.git",
+  glob: "activerecord/*.gemspec"
+----
+
+== Supported operators
+
+* Logical: `and`, `or`, `not`, and ternaries (as `CASE` with no `ELSE`, so an unknown condition stays unknown)
+* Comparison: `eq`, `ne`, `lt`, `gt`, `le`, `ge`, `in`
+* String: `contains`, `startsWith`, `endsWith` -- `LIKE ... ESCAPE`; `matches` only for patterns that reduce to an exact literal set or `LIKE` form
+* Collection: `exists`, `exists_one`, `all`, `filter`, `map`, `size`, `hasIntersection`, `intersect`, `except`, `isSubset` -- correlated `EXISTS` and `COUNT` subqueries
+* Arithmetic, string length, `string()`, and timestamp and duration comparisons computed in the database
+* Macros over principal attribute collections expand to literal `OR` (or `AND` for `all`) comparisons and need no mapping
+
+The adapter raises on shapes with no exact SQL translation, including positional list access (`tags[0]`), division by another column, `timestamp()`, `int()`, or `double()` over a text column, and macros over map keys. The link:https://github.com/cerbos/query-plan-adapters/blob/main/activerecord/conformance-ledger.json[conformance ledger] lists every refused case with its reason.
+
+== Usage
+
+[source,ruby]
+----
+require "cerbos"
+require "cerbos/active_record"
+
+cerbos = Cerbos::Client.new("localhost:3593", tls: false)
+
+plan = cerbos.plan_resources(
+  principal: {id: "user@example.com", roles: ["USER"]},
+  resource: {kind: "document"},
+  action: "view"
+)
+
+MAPPING = {
+  "request.resource.attr.ownerId" => Cerbos::ActiveRecord.field("owner_id"),
+  "request.resource.attr.status" => Cerbos::ActiveRecord.field("status")
+}
+
+begin
+  documents = Cerbos::ActiveRecord.query_plan_to_relation(
+    plan: plan, model: Document, attributes: MAPPING
+  )
+rescue Cerbos::ActiveRecord::Error => e
+  warn "Cerbos plan not translatable: #{e.message}"
+  documents = Document.none
+end
+
+documents.where(archived: false).order(:created_at).limit(20)
+----
+
+Every plan kind becomes a relation, so you do not need to branch on the result:
+
+[cols="1,2", options="header"]
+|===
+| Plan kind | Result
+
+| `KIND_ALWAYS_ALLOWED`
+| `model.all`
+
+| `KIND_ALWAYS_DENIED`
+| `model.none`
+
+| `KIND_CONDITIONAL`
+| `model.where(<translated condition>)`
+|===
+
+To skip the database on a denial, check `plan.kind == :KIND_ALWAYS_DENIED` before translating.
+
+All errors are subclasses of `Cerbos::ActiveRecord::Error`: `UnmappedAttributeError`, `UnsupportedOperatorError`, `InvalidPlanError`, and `UnsupportedAssociationError`.
+
+== Field mapper
+
+Every plan variable must be mapped, or translation raises. The adapter never infers a column from an attribute name.
+
+* `field` -- a scalar column. A dotted path (`"owner.department"`) follows `belongs_to` and `has_one` associations through a correlated scalar subquery. A missing hop yields `NULL`, so the row is excluded.
+* `relation` -- a collection association. `member_field` is the column compared when the policy treats the collection as a list of values; `fields` maps member names used inside macro bodies.
+
+[source,ruby]
+----
+MAPPING = {
+  "request.resource.id" => Cerbos::ActiveRecord.field("id"),
+  "request.resource.attr.department" => Cerbos::ActiveRecord.field("owner.department"),
+  "request.resource.attr.tags" => Cerbos::ActiveRecord.relation(
+    :tags, member_field: "name", fields: {"name" => Cerbos::ActiveRecord.field("name")}
+  )
+}
+----
+
+=== Nested relations
+
+A `fields` entry can itself be a `relation`. For a dotted policy path such as `R.attr.mainCategory.subCategories`, map the start of the path and nest each later step, rather than mapping the full path onto one flat `has_many :through`. The nested form tells the adapter which hops are to-one parents, so it can deny rows whose parent is absent, as Cerbos does.
+
+[source,ruby]
+----
+"request.resource.attr.mainCategory" => Cerbos::ActiveRecord.relation(:categories, fields: {
+  "subCategories" => Cerbos::ActiveRecord.relation(:sub_categories, fields: {
+    "name" => Cerbos::ActiveRecord.field("name")
+  })
+})
+----
+
+=== Null convention
+
+An application can send a `NULL` column to Cerbos either by omitting the attribute (`:omitted`, the default) or as an explicit null (`:explicit`). The plan is identical for both, so declare the convention per nullable attribute with `null_representation:`, or for the whole call with `null_attribute_representation:`:
+
+[source,ruby]
+----
+MAPPING = {
+  "request.resource.attr.owner" => Cerbos::ActiveRecord.field("owner", null_representation: :explicit),
+  "request.resource.attr.tag" => Cerbos::ActiveRecord.field("tag", null_representation: :omitted)
+}
+----
+
+== Operator overrides
+
+For a shape your database can express but portable SQL cannot (a dialect regex, JSON containment, full-text search), pass a callable that receives the resolved operands and returns an Arel node. Structural operators (`and`, `or`, `not`, `if`, `lambda`, and the collection macros) cannot be overridden.
+
+[source,ruby]
+----
+Cerbos::ActiveRecord.query_plan_to_relation(
+  plan: plan, model: Document, attributes: MAPPING,
+  operator_overrides: {
+    "matches" => ->(column, pattern) { column.matches_regexp(pattern) }
+  }
+)
+----
+
+== Limitations
+
+* The adapter raises `UnsupportedAssociationError` for associations whose rows a subquery cannot reproduce: polymorphic `belongs_to`, scoped associations, targets with a `default_scope`, `has_one` used as a collection, associations to an STI subclass, and composite-key associations.
+* Translation is only correct if the mapped associations return the same rows your application sends to Cerbos as resource attributes. A mismatch is an authorization bug that the adapter cannot detect.
+* CEL string comparison is byte-exact. Use a byte-order collation: `PRAGMA case_sensitive_like = ON` on SQLite, `"C"` on PostgreSQL, and `utf8mb4_0900_bin` for both columns and the connection on MySQL.
+
+== Source code
+
+link:https://github.com/cerbos/query-plan-adapters/tree/main/activerecord[cerbos/query-plan-adapters/activerecord]

@@ -1,0 +1,151 @@
+include::ROOT:partial$attributes.adoc[]
+
+= Entity Framework Core adapter
+
+include::ROOT:partial$version-check.adoc[]
+
+The `Cerbos.QueryPlan.EntityFrameworkCore` package converts a Cerbos xref:api:index.adoc#resources-query-plan[`PlanResources`] response into an `Expression<Func<TEntity, bool>>` for Entity Framework Core. The result is an ordinary predicate: pass it to `Where` and compose your own filters, ordering, paging, and includes as usual.
+
+This adapter is an open source reference implementation maintained in the link:https://github.com/cerbos/query-plan-adapters[cerbos/query-plan-adapters] repository. It is not covered by Cerbos support.
+
+== Requirements
+
+* link:https://github.com/cerbos/cerbos-sdk-net[Cerbos .NET SDK] (`Cerbos.Sdk`), which the package depends on
+* .NET 10 and EF Core 10
+* SQL Server, PostgreSQL (Npgsql), or SQLite provider
+
+== Installation
+
+The package is not yet released to NuGet. Until it is, build it from the link:https://github.com/cerbos/query-plan-adapters/tree/main/efcore[source repository].
+
+Once released, install the pre-release package:
+
+[source,bash]
+----
+dotnet add package Cerbos.QueryPlan.EntityFrameworkCore --prerelease
+----
+
+== Supported operators
+
+[cols="1,2", options="header"]
+|===
+| Category | Operators
+
+| Logical
+| `&&`, `\|\|`, `!`, `? :`
+
+| Comparison
+| `==`, `!=` (values of different types are unequal); `<`, `\<=`, `>`, `>=` over numbers, strings (code-point order), booleans, and timestamps
+
+| Membership
+| `in` -- a literal list, a mapped list, or a list literal containing columns
+
+| Arithmetic
+| `+`, `-`, `*`, `/` -- double arithmetic; `/` only by a finite, non-zero constant
+
+| String
+| `startsWith`, `endsWith`, `contains` -- with a constant or a column on either side
+
+| Existence
+| `has` -- a mapped field, a navigation's field, or a field of a list element
+
+| Collection
+| `exists`, `all`, `exists_one`, `filter`, `map`, `size`, `hasIntersection` -- correlated subqueries over mapped lists
+
+| Conversion
+| `timestamp()`, `duration()`, `string()` over strings or booleans, `double()` over numbers
+
+| Hierarchy
+| `hierarchy()`, `ancestorOf`, `descendentOf`, `overlaps` -- over a delimited string column or literal
+
+| Indexing
+| `list[i]` -- with a constant index and a mapped `position` column
+|===
+
+A plan shape the adapter cannot translate exactly throws `QueryPlanRefusedException` when you call `ToFilter`, before any query reaches EF Core. The adapter never emits an approximate predicate.
+
+== Usage
+
+[source,csharp]
+----
+using Cerbos.QueryPlan.EntityFrameworkCore;
+using Cerbos.Sdk.Builder;
+
+var cerbos = CerbosClientBuilder.ForTarget("http://localhost:3593").WithPlaintext().Build();
+
+var plan = cerbos.PlanResources(PlanResourcesRequest.NewInstance()
+    .WithPrincipal(Principal.NewInstance("user@example.com", ["USER"]))
+    .WithResource(Resource.NewInstance("document"))
+    .WithActions(["view"]));
+
+var attributes = new AttributeMap<Document>()
+    .Field("request.resource.attr.ownerId", d => d.OwnerId)
+    .Field("request.resource.attr.public", d => d.IsPublic);
+
+var filter = QueryPlanAdapter.ToFilter(
+    plan,
+    new QueryPlanOptions<Document>(DatabaseProvider.SqlServer, attributes));
+
+if (filter.Kind == FilterKind.AlwaysDenied) return [];
+
+var documents = await db.Documents
+    .Where(filter.Predicate)
+    .Where(d => d.Region == "emea")
+    .OrderBy(d => d.Id)
+    .Take(20)
+    .ToListAsync();
+----
+
+`filter.Kind` is `AlwaysAllowed`, `AlwaysDenied`, or `Conditional`. `filter.Predicate` is never null: it is `true` when the plan always allows and `false` when it always denies, so a single code path can serve all three. `ToFilter` also accepts the protobuf `PlanResourcesFilter` directly, for a plan from the REST API or a cache.
+
+== Attribute map
+
+An `AttributeMap<TEntity>` declares every attribute the policies read. A plan referencing an undeclared attribute throws `UnmappedAttributeException`, a subtype of `QueryPlanRefusedException`.
+
+[source,csharp]
+----
+var attributes = new AttributeMap<Document>()
+    .Field("request.resource.id", d => d.Id)
+    .Field("request.resource.attr.status", d => d.Status)
+    .Field("request.resource.attr.owner.team", d => d.Owner!.Team)
+    .List("request.resource.attr.tagNames", d => d.Tags, t => t.Name, t => t.Position)
+    .List("request.resource.attr.reviewers", d => d.Reviewers, r => r
+        .Field("id", x => x.UserId)
+        .Field("role", x => x.Role));
+----
+
+* `Field` -- maps a scalar (string, number, boolean, `DateTime`, or `DateTimeOffset`) to a column. A path can pass through to-one navigations; a null navigation is treated as a missing attribute.
+* `List(name, path, element, position)` -- maps a list of scalars stored one per related row, where `element` is the column holding the value.
+* `List(name, path, fields, position)` -- maps a list of objects stored one per related row. Keys are the field names a lambda body reads (`x.role` in `R.attr.reviewers.exists(x, x.role == "lead")`), and lists can nest.
+* `position` -- optional. The column holding each element's zero-based index, needed only for `R.attr.list[0]`-style indexing.
+
+=== NULL columns
+
+Choose how your application sends NULL columns to Cerbos with `NullConvention`, either per field (`.Field(name, path, NullConvention.Explicit)`) or for the call (`new QueryPlanOptions<T>(...) { Nulls = NullConvention.Explicit }`):
+
+* `Omitted` (default) -- the attribute is left out, so `R.attr.x == null` is an error and denies.
+* `Explicit` -- the attribute is sent as `null`, so `R.attr.x == null` is true.
+
+== Database requirements
+
+CEL compares strings exactly and by code point. Configure mapped string columns so that the database does the same, otherwise it can return rows the PDP denies:
+
+* SQL Server -- store mapped strings as `varchar` under the `Latin1_General_100_BIN2_UTF8` collation. The default collation is case-insensitive.
+* PostgreSQL -- use the `"C"` collation (or initialize the database with `--lc-collate=C`). Avoid `citext` and nondeterministic ICU collations.
+* SQLite -- keep the default `BINARY` collation; do not declare `NOCASE` on a mapped column.
+
+Cerbos sends every attribute number as a double, so map numeric columns as `double` where possible. `int`, `long`, and `decimal` columns are converted to `double` in SQL, which is exact up to 2^53^.
+
+== Limitations
+
+The following are refused with `QueryPlanRefusedException`:
+
+* `matches()`, `int()`, `%`, `upperAscii()`, `lowerAscii()`, and `string()` of a number
+* Division by a column, NaN, and infinities
+* `except`, `intersect`, `isSubset`, list concatenation, comparing whole lists, and two-variable `exists`
+* `timeSince` and timestamp arithmetic over a column
+* Comparing a timestamp column as a string without `timestamp()`
+
+== Source code
+
+link:https://github.com/cerbos/query-plan-adapters/tree/main/efcore[cerbos/query-plan-adapters/efcore]

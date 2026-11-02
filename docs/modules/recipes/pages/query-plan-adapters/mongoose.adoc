@@ -6,19 +6,21 @@ include::ROOT:partial$version-check.adoc[]
 
 The `@cerbos/orm-mongoose` package converts a Cerbos xref:api:index.adoc#resources-query-plan[`PlanResources`] response into a MongoDB filter compatible with Mongoose's `find()` method.
 
+This adapter is an open source reference implementation maintained in the link:https://github.com/cerbos/query-plan-adapters[cerbos/query-plan-adapters] repository. It is not covered by Cerbos support.
+
 == Requirements
 
-* Cerbos >= v0.16
+* `@cerbos/core` `^0.32.0 || ^0.33.0` (peer dependency)
 * `@cerbos/http` or `@cerbos/grpc` client
-* Mongoose 8.x or 9.x
-* MongoDB 5.0+
-* Node.js >= 20.0.0
+* Mongoose 9.x
+* MongoDB 7.0+
+* Node.js >= 22.0.0
 
 == Installation
 
 [source,bash]
 ----
-npm install @cerbos/orm-mongoose
+npm install @cerbos/orm-mongoose @cerbos/core
 ----
 
 == Supported operators
@@ -36,17 +38,29 @@ npm install @cerbos/orm-mongoose
 | Membership
 | `in`, `hasIntersection` -- `$in` for simple lists, `$elemMatch` for array relations
 
+| List functions
+| `isSubset`, `except(...) == []`, `intersect(...) == []` -- the element-wise `all`/`exists` each reduces to
+
 | String
 | `contains`, `startsWith`, `endsWith` -- escaped regular expressions
 
-| Existence
-| `isSet`, `exists`, `exists_one` -- `$exists`/`$ne: null` for scalars, `$elemMatch` for collections
+| Null checks
+| `eq`/`ne` against `null`, `exists` -- `$eq: null`/`$ne: null` for scalars, `$elemMatch` for collections
 
 | Collection
 | `filter`, `lambda`, `map`, `all` -- scoped `$elemMatch` filters with lambda variable resolution
+
+| Arithmetic and values
+| `add`, `sub`, `mult`, `div`, `mod`, `if`, `size`, `index`, `get-field` -- document-level `$expr`
+
+| Conversions and matching
+| `string`, `double`, `int`, `timestamp`, `duration`, `timeSince`, `upperAscii`, `matches` -- guarded conversion and regular expressions
+
+| Hierarchies
+| `hierarchy`, `ancestorOf`, `descendentOf`, `overlaps` -- literal prefix and ancestor-list filters
 |===
 
-NOTE: `exists_one` behaves as "at least one element matches". Enforcing "exactly one" requires an aggregation pipeline, which is outside the scope of this adapter.
+NOTE: `exists_one` is not supported. Enforcing "exactly one element matches" requires an aggregation pipeline, which is outside the scope of this adapter, so the adapter throws instead.
 
 == Usage
 
@@ -97,9 +111,14 @@ const mapper = {
 ----
 
 * `field` -- rewrites a Cerbos path to a different field name in MongoDB
+* `nullable` -- a stored `null` means a missing Cerbos attribute, so comparisons add a non-null guard (see <<mongoose-null-attributes>>)
 * `valueParser` -- transforms leaf values during filter construction (for example, converting strings to `ObjectId`)
+* `valueType` -- the stored scalar type (`"number"`, `"string"`, `"boolean"` or `"dateTime"`), so Mongoose does not cast a mismatched CEL literal into the field's type
 * `relation` -- describes embedded documents (`type: "one"`) or arrays (`type: "many"`)
+* `relation.requiresParent` -- document path of an optional to-one parent an array is reached through
 * `fields` -- nested overrides for lambda expressions such as `tag.name`
+
+Every attribute a plan references needs a mapper entry, either its own or the relation it is reached through. Otherwise translation throws `No mapper entry for <reference>`.
 
 === Value parsing
 
@@ -119,11 +138,42 @@ const mapper = {
 
 == Collection operators
 
-Collection-aware operators (`filter`, `exists`, `exists_one`, `hasIntersection`, `map`, `all`) require the mapper to declare the relation with `type: "many"`. The adapter scopes lambda variables and uses the `fields` map when translating expressions:
+Collection-aware operators (`filter`, `exists`, `hasIntersection`, `map`, `all`) require the mapper to declare the relation with `type: "many"`. The adapter scopes lambda variables and uses the `fields` map when translating expressions:
 
-* `exists`, `exists_one`, `filter` -- wrap the condition in `$elemMatch`
+* `exists`, `filter` -- wrap the condition in `$elemMatch`
 * `hasIntersection` -- supports both scalar arrays and arrays of objects; projects nested paths via `$elemMatch`
 * `all` -- converts the lambda condition into a negated `$elemMatch` so all elements must satisfy the predicate
+
+`exists` and `all` over a collection the PDP resolves at plan time, typically a principal attribute such as `P.attr.teams.exists(t, R.attr.team == t)`, need no relation mapping. Each element is substituted into the lambda body and the results are combined with `$or` or `$and`.
+
+Collection predicates cannot reference fields outside their lambda, because `$elemMatch` cannot evaluate the root document.
+
+[#mongoose-null-attributes]
+== NULL attribute representation
+
+The query plan is the same whether your application sends a `NULL` field to `CheckResources` as an explicit `null` or omits the attribute. Set `nullAttributeRepresentation` to tell the adapter which convention you use:
+
+* `"omitted"` (default) -- every mapper entry that does not declare `nullable` is treated as `nullable: true`, and null comparison operands are rejected
+* `"explicit"` -- `null` is compared as a value
+
+[source,typescript]
+----
+queryPlanToMongoose({ queryPlan, mapper, nullAttributeRepresentation: "explicit" });
+----
+
+Declare `nullable: false` on entries that are always stored and never `null` to drop the guard.
+
+== Limitations
+
+Shapes the adapter cannot express throw `UnsupportedQueryPlanError` (a subclass of `Error`) rather than emit a broader filter. Catch it to deny the request or fall back to per-resource `checkResource` calls. Refused shapes include:
+
+* `exists_one`, negated collection macros, and macros over a `type: "one"` relation
+* References to the outer document inside a collection predicate
+* Division by anything other than a non-zero constant, and `%` other than over `size()` by a non-zero integer constant
+* Whole-list equality and list-valued membership needles
+* `matches` patterns beyond literals, `.`, `*`, `+`, `?`, leading `^`, terminal `$` and escaped metacharacters
+
+Mapper misconfiguration, such as an unmapped reference, throws a plain `Error`.
 
 == Source code
 

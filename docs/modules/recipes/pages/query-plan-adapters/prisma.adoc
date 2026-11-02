@@ -9,29 +9,34 @@ include::ROOT:partial$version-check.adoc[]
 
 The `@cerbos/orm-prisma` package converts a Cerbos xref:api:index.adoc#resources-query-plan[`PlanResources`] response into a Prisma `where` clause. The resulting filter object can be passed directly to `findMany`, `count`, or any Prisma method that accepts a `where` argument.
 
+This adapter is an open source reference implementation maintained in the link:https://github.com/cerbos/query-plan-adapters[cerbos/query-plan-adapters] repository. It is not covered by Cerbos support.
+
 == Requirements
 
-* Cerbos >= v0.40
+* `@cerbos/core` `^0.32.0 || ^0.33.0` (peer dependency)
 * `@cerbos/http` or `@cerbos/grpc` client
-* Prisma >= 6.0 (v7 supported)
-* Node.js >= 20.0.0
+* `@prisma/client` 5, 6 or 7 (peer dependency)
+* Node.js >= 22.0.0
+* A byte-exact, case-sensitive database collation on mapped columns (see <<prisma-collation>>)
 
 == Installation
 
 [source,bash]
 ----
-npm install @cerbos/orm-prisma
+npm install @cerbos/orm-prisma @cerbos/core
 ----
 
 == Supported operators
 
 === Scalar operators
 
-`and`, `or`, `not`, `eq`, `ne`, `lt`, `gt`, `lte`, `gte`, `in`, `startsWith`, `endsWith`, `contains`, `isSet`
+`and`, `or`, `not`, `eq`, `ne`, `lt`, `gt`, `lte`, `gte`, `in`, `startsWith`, `endsWith`, `contains`
+
+`== null` and `!= null` comparisons are translated according to the <<prisma-null-attributes,NULL attribute representation>>.
 
 === Relation operators
 
-`is`, `isNot`, `some`, `none`, `every`, `exists`, `exists_one`, `all`, `filter`, `except`, `hasIntersection`
+`is`, `isNot`, `some`, `none`, `every`, `exists`, `all`, `filter`, `map`, `except`, `hasIntersection`, `isSubset`
 
 === Advanced features
 
@@ -39,6 +44,11 @@ npm install @cerbos/orm-prisma
 * Automatic field inference from attribute paths
 * Collection mapping and filtering
 * Lambda expression handling
+* Field-to-field comparisons within the same model (requires the `model` option)
+* Arithmetic against a constant (`add`, `sub`, `mult`, `div`) and string concatenation, solved for the column
+* `matches` for RE2 patterns that `LIKE` can decide exactly
+* `hierarchy` functions: `overlaps`, `ancestorOf`, `descendentOf`
+* `timestamp()` comparisons over columns mapped with `valueType: "dateTime"`
 
 == Usage
 
@@ -181,6 +191,48 @@ const result = queryPlanToPrisma({
 });
 ----
 
+== Mapper options
+
+[cols="1,3", options="header"]
+|===
+| Key | Description
+
+| `field`
+| Prisma field name.
+
+| `valueType`
+| `"string"`, `"number"`, `"boolean"` or `"dateTime"`. Lets the adapter settle comparisons the type already decides. Required (`"dateTime"`) for `timestamp()` comparisons.
+
+| `nullable`
+| `false` declares the column cannot be `NULL`. Relation element columns reached through a collection macro are guarded as nullable unless declared `nullable: false`; Prisma rejects the guard on a required column, so declare `nullable: false` on every required element column a policy reaches.
+
+| `nullAttributeRepresentation`
+| Per-attribute override of the <<prisma-null-attributes,NULL attribute representation>>.
+
+| `relation.model`
+| Prisma model name of the related model. Needed only for field-to-field comparisons inside a collection expression.
+
+| `relation.subqueryFilter`
+| A `where` input over the related model that your application applies to its own reads (for example, soft delete or tenant scoping). It is ANDed into every nested relation filter.
+|===
+
+[#prisma-null-attributes]
+== NULL attribute representation
+
+The query plan is the same however your application represents a `NULL` column in the attributes it sends to `CheckResources`, so tell the adapter which convention you use with the `nullAttributeRepresentation` option:
+
+* `"omitted"` (default) -- `NULL` columns are left out of the resource attributes. The adapter never emits a filter that selects `NULL` rows.
+* `"explicit"` -- `NULL` columns are sent as explicit `null` values, and `x == null` renders as `IS NULL`.
+
+[source,typescript]
+----
+const result = queryPlanToPrisma({
+  queryPlan,
+  mapper,
+  nullAttributeRepresentation: "explicit",
+});
+----
+
 == `in` operator normalization
 
 The adapter normalizes `in` expressions to match Prisma conventions:
@@ -189,11 +241,39 @@ The adapter normalizes `in` expressions to match Prisma conventions:
 * Arrays remain `{ field: { in: [...] } }`
 * Relation-backed fields retain their relation structure while applying the appropriate operator at the leaf
 
+[#prisma-collation]
+== Database collation
+
+Cerbos string comparisons are byte-exact, but Prisma leaves comparison semantics to the database collation. A case- or accent-insensitive collation makes the filter return rows Cerbos denies.
+
+* PostgreSQL: a deterministic, case-sensitive collation. Use `"C"` on columns that policies order with `<`, `<=`, `>` or `>=`.
+* MySQL: `utf8mb4_0900_bin`. Prisma migrations create tables with `utf8mb4_unicode_ci`, so convert the tables after migrating.
+* SQL Server: a case-sensitive (`_CS_`) collation.
+* SQLite: no `COLLATE NOCASE` on mapped fields, and `PRAGMA case_sensitive_like = ON` on every connection.
+
+== Limitations
+
+The adapter throws `UnsupportedQueryPlanError` (a subclass of `Error`) rather than return a filter that might over-grant. Catch it to deny the request or fall back to per-resource `checkResource` calls. Refused shapes include:
+
+* `contains`, `startsWith` and `endsWith` needles containing `%`, `_` or `\`, and column-valued needles
+* `exists_one` over a relation, and `size()` of a relation other than emptiness checks
+* Two-variable comprehensions such as `list.exists(i, v, ...)`
+* Column comparisons across models
+* Modulo, arithmetic on both sides of a comparison, and `matches` patterns that `LIKE` cannot decide exactly
+* List indexing (`list[i]`) and casts that parse strings (`int("...")`, `timestamp("...")`)
+
 == Types
 
 [source,typescript]
 ----
 import { PlanKind, QueryPlanToPrismaResult } from "@cerbos/orm-prisma";
+
+type QueryPlanToPrismaArgs = {
+  queryPlan: PlanResourcesResponse;
+  mapper?: Mapper;
+  model?: string;
+  nullAttributeRepresentation?: "explicit" | "omitted";
+};
 
 type QueryPlanToPrismaResult =
   | { kind: PlanKind.ALWAYS_ALLOWED | PlanKind.ALWAYS_DENIED }
@@ -201,11 +281,16 @@ type QueryPlanToPrismaResult =
 
 type MapperConfig = {
   field?: string;
+  valueType?: "dateTime" | "string" | "number" | "boolean";
+  nullable?: boolean;
+  nullAttributeRepresentation?: "explicit" | "omitted";
   relation?: {
     name: string;
     type: "one" | "many";
+    model?: string;
     field?: string;
     fields?: { [key: string]: MapperConfig };
+    subqueryFilter?: Record<string, any>;
   };
 };
 

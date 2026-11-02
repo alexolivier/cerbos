@@ -1,0 +1,122 @@
+include::ROOT:partial$attributes.adoc[]
+
+= Spring Data JPA adapter
+
+include::ROOT:partial$version-check.adoc[]
+
+The `cerbos-spring-data` package converts a Cerbos xref:api:index.adoc#resources-query-plan[`PlanResources`] response into a link:https://spring.io/projects/spring-data-jpa[Spring Data JPA] `Specification<T>` that you can pass directly to a `JpaSpecificationExecutor`.
+
+This adapter is an open source reference implementation maintained in the link:https://github.com/cerbos/query-plan-adapters[cerbos/query-plan-adapters] repository. It is not covered by Cerbos support.
+
+The translation is performed by the xref:query-plan-adapters/jpa.adoc[JPA adapter], which works on any Jakarta Persistence `CriteriaQuery` without Spring. This adapter wraps it and returns the result as a `Specification`. The field mapping, options, supported operators, collation requirements and refusals are the same as for the JPA adapter.
+
+== Requirements
+
+* link:https://github.com/cerbos/cerbos-sdk-java[Cerbos Java SDK]
+* JDK 17+
+* Spring Data JPA 3.5.2 or later (Spring Boot 3.5.4 or later). Spring Data JPA 4 with Hibernate 7 (the Spring Boot 4 pair) is also tested.
+* `dev.cerbos:cerbos-jpa` at the same version, which the adapter's POM brings in
+* A byte-exact collation on every string column referenced by the mapping (see xref:query-plan-adapters/jpa.adoc#jpa-collation[Database collation requirements])
+
+== Installation
+
+The adapter is not published to Maven Central yet. Build it and the JPA adapter it wraps from a checkout of the link:https://github.com/cerbos/query-plan-adapters[query-plan-adapters] repository, and install both into your local Maven repository:
+
+[source,bash]
+----
+(cd jpa && ./gradlew publishToMavenLocal)
+(cd spring-data && ./gradlew publishToMavenLocal)
+----
+
+Then add `mavenLocal()` to your repositories and depend on it:
+
+[source,kotlin]
+----
+repositories {
+    mavenLocal()
+    mavenCentral()
+}
+
+dependencies {
+    implementation("dev.cerbos:cerbos-spring-data:0.1.0-alpha.1")
+    implementation("dev.cerbos:cerbos-sdk-java:0.20.1")
+}
+----
+
+== Supported operators
+
+The supported operators are those of the JPA adapter. See xref:query-plan-adapters/jpa.adoc#jpa-supported-operators[Supported operators].
+
+== Usage
+
+[source,java]
+----
+import dev.cerbos.queryplan.jpa.AttributeMapping;
+import dev.cerbos.queryplan.springdata.SpringDataQueryPlanAdapter;
+import org.springframework.data.jpa.domain.Specification;
+
+public interface ContactRepository
+        extends JpaRepository<Contact, Long>, JpaSpecificationExecutor<Contact> {}
+
+static final Map<String, AttributeMapping> MAPPING = Map.of(
+    "request.resource.attr.ownerId",    AttributeMapping.field("owner.id"),
+    "request.resource.attr.department", AttributeMapping.field("department"),
+    "request.resource.attr.tags",       AttributeMapping.relation("tags", Map.of(
+        "name", AttributeMapping.field("name"))));
+
+List<Contact> viewableContacts(CerbosBlockingClient cerbos, ContactRepository contacts) {
+    PlanResourcesResult plan = cerbos.plan(
+        Principal.newInstance("alice", "USER"),
+        Resource.newInstance("contact"),
+        List.of("view"));
+
+    if (plan.isAlwaysDenied()) {
+        return List.of();
+    }
+
+    Specification<Contact> allowed = SpringDataQueryPlanAdapter.toSpecification(plan, MAPPING);
+    return contacts.findAll(allowed);
+}
+----
+
+The returned `Specification` covers every plan kind: an always-allowed plan returns `Specification.unrestricted()` (no `WHERE` clause), an always-denied plan returns an always-false predicate, and a conditional plan returns the translated predicate tree. Checking `isAlwaysDenied()` first only skips the database round trip.
+
+Compose the `Specification` with your own and pass it to a repository method:
+
+[source,java]
+----
+Specification<Contact> own = (root, query, cb) -> cb.like(root.get("name"), "Smith%");
+Page<Contact> page = contacts.findAll(own.and(allowed), pageable);
+----
+
+Do not call `Specification.toPredicate` yourself. A paged `findAll` runs a separate `COUNT` query with its own `Root`, and the `Specification` builds a fresh predicate for each. An always-allowed `Specification` produces a `null` predicate, which Spring Data treats as "no `WHERE` clause" but a hand-built query would not.
+
+WARNING: Use the `Specification` only in `SELECT` queries. Never pass it to `repository.delete(Specification)` or another criteria bulk operation: Hibernate's multi-table bulk delete clears `@ElementCollection` and join tables with the same predicate. The adapter detects a `CriteriaDelete` and throws `UnsupportedOperationException`. Select the IDs first, then call `deleteAllById`.
+
+== Field mapper
+
+The mapping types are the JPA adapter's, in the `dev.cerbos.queryplan.jpa` package. See xref:query-plan-adapters/jpa.adoc#jpa-field-mapper[Field mapper] for `AttributeMapping.field(...)` and `AttributeMapping.relation(...)`.
+
+To configure the translation, pass a `JpaQueryPlanAdapter.Options` instead of the mapping:
+
+[source,java]
+----
+import dev.cerbos.queryplan.jpa.JpaQueryPlanAdapter.Options;
+import dev.cerbos.queryplan.jpa.NullAttributeRepresentation;
+
+Options options = Options.of(MAPPING)
+    .withNullAttributeRepresentation(NullAttributeRepresentation.EXPLICIT)
+    .withMaxMacroDepth(8);
+
+Specification<Contact> allowed = SpringDataQueryPlanAdapter.toSpecification(plan, options);
+----
+
+== Limitations
+
+The JPA adapter's xref:query-plan-adapters/jpa.adoc#jpa-limitations[limitations] apply. A conditional plan is translated when Spring Data first evaluates the `Specification`, so most refusals are raised there rather than by `toSpecification`.
+
+A `relation(...)` mapping filters through `EXISTS`, but the entity's collection is still loaded lazily. With `spring.jpa.open-in-view=false`, serializing the entity after the transaction closes fails with a `LazyInitializationException`. Eager-fetch small collections, map to DTOs inside a `@Transactional(readOnly = true)` method, or return DTO projections.
+
+== Source code
+
+link:https://github.com/cerbos/query-plan-adapters/tree/main/spring-data[cerbos/query-plan-adapters/spring-data]
