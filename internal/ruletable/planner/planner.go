@@ -482,15 +482,32 @@ type partialEvaluator struct {
 	nowFn     func() time.Time
 }
 
-func (p *partialEvaluator) evaluateUnknown(ctx context.Context, residual celast.Expr) (_ *exprpb.CheckedExpr, err error) {
+func (p *partialEvaluator) evaluateUnknown(ctx context.Context, residual celast.Expr) (*exprpb.CheckedExpr, error) {
+	residual, err := p.planResidual(ctx, residual)
+	if err != nil {
+		return nil, err
+	}
+
+	expr2, err := celast.ExprToProto(residual)
+	if err != nil {
+		return nil, fmt.Errorf("error converting expression to proto: %w", err)
+	}
+	return &exprpb.CheckedExpr{Expr: expr2}, nil
+}
+
+func (p *partialEvaluator) planResidual(ctx context.Context, residual celast.Expr) (celast.Expr, error) {
+	residual, err := p.evalConditionalBranches(ctx, residual)
+	if err != nil {
+		return nil, err
+	}
+	plannerutils.RenumberIDs(residual)
+
 	residual, err = p.evalComprehensionBody(ctx, residual)
 	if err != nil {
 		return nil, err
 	}
 	m := newExpressionProcessor(p)
-	var r bool
-	var e celast.Expr
-	r, e, err = m.Process(ctx, residual)
+	r, e, err := m.Process(ctx, residual)
 	if err != nil {
 		return nil, err
 	}
@@ -501,11 +518,51 @@ func (p *partialEvaluator) evaluateUnknown(ctx context.Context, residual celast.
 		}
 	}
 
-	expr2, err := celast.ExprToProto(residual)
-	if err != nil {
-		return nil, fmt.Errorf("error converting expression to proto: %w", err)
+	return residual, nil
+}
+
+// evalConditionalBranches plans the branches of ternaries with unknown conditions, which CEL leaves unevaluated.
+func (p *partialEvaluator) evalConditionalBranches(ctx context.Context, e celast.Expr) (celast.Expr, error) {
+	if e.Kind() != celast.CallKind {
+		return e, nil
 	}
-	return &exprpb.CheckedExpr{Expr: expr2}, nil
+
+	const conditionalArity = 3
+	call := e.AsCall()
+	isConditional := call.FunctionName() == operators.Conditional && len(call.Args()) == conditionalArity
+	args := make([]celast.Expr, len(call.Args()))
+	for i, arg := range call.Args() {
+		var err error
+		if isConditional && i > 0 {
+			args[i], err = p.evalBranch(ctx, arg)
+		} else {
+			args[i], err = p.evalConditionalBranches(ctx, arg)
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	fact := celast.NewExprFactory()
+	if call.IsMemberFunction() {
+		target, err := p.evalConditionalBranches(ctx, call.Target())
+		if err != nil {
+			return nil, err
+		}
+		return fact.NewMemberCall(0, call.FunctionName(), target, args...), nil
+	}
+	return fact.NewCall(0, call.FunctionName(), args...), nil
+}
+
+func (p *partialEvaluator) evalBranch(ctx context.Context, e celast.Expr) (celast.Expr, error) {
+	val, residual, err := p.evalPartially(ctx, e)
+	if err != nil {
+		return e, nil //nolint:nilerr // CEL only raises the error if this branch is taken, so leave it unevaluated.
+	}
+	if celtypes.IsUnknown(val) {
+		return p.planResidual(ctx, residual)
+	}
+	return residual, nil
 }
 
 func (p *partialEvaluator) evalPartially(ctx context.Context, e celast.Expr) (ref.Val, celast.Expr, error) {

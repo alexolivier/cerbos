@@ -1,0 +1,3 @@
+type:fix
+Substitute principal attributes inside query plan ternary branches
+When a condition was a ternary whose condition referenced a resource attribute, `PlanResources` left principal attributes in the branches as `request.principal.attr.*` variables, even though the request supplied their values. The branches are now planned the same way as a standalone condition. For example, with `P.attr.teams` set to `["red", "blue"]`, `R.attr.status == "draft" ? P.attr.teams.exists(t, t == R.attr.team) : R.attr.public` now plans the first branch as `"red" == R.attr.team || "blue" == R.attr.team`.

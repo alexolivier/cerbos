@@ -1,0 +1,141 @@
+# yaml-language-server: $schema=../../.jsonschema/QueryPlannerTestSuite.schema.json
+---
+description: Principal attributes are substituted inside ternary branches
+
+config:
+  lenientScopeSearch:
+    - false
+    - true
+  schemaEnforcement:
+    - ENFORCEMENT_NONE
+    - ENFORCEMENT_WARN
+    - ENFORCEMENT_REJECT
+  strictEvaluation:
+    - false
+    - true
+
+principal:
+  id: alice
+  policyVersion: default
+  roles:
+    - user
+  attr:
+    teams:
+      - red
+      - blue
+    home: red
+
+tests:
+  - resource:
+      kind: ternary_principal_attr
+      policyVersion: default
+    action: exists
+    want:
+      filter:
+        kind: KIND_CONDITIONAL
+        condition:
+          expression:
+            operator: if
+            operands:
+              - expression:
+                  operator: eq
+                  operands:
+                    - variable: request.resource.attr.status
+                    - value: draft
+              - expression:
+                  operator: or
+                  operands:
+                    - expression:
+                        operator: eq
+                        operands:
+                          - value: red
+                          - variable: request.resource.attr.team
+                    - expression:
+                        operator: eq
+                        operands:
+                          - value: blue
+                          - variable: request.resource.attr.team
+              - variable: request.resource.attr.public
+      matchedScopes:
+        exists: ""
+  - resource:
+      kind: ternary_principal_attr
+      policyVersion: default
+    action: scalar
+    want:
+      filter:
+        kind: KIND_CONDITIONAL
+        condition:
+          expression:
+            operator: if
+            operands:
+              - expression:
+                  operator: eq
+                  operands:
+                    - variable: request.resource.attr.status
+                    - value: draft
+              - expression:
+                  operator: eq
+                  operands:
+                    - variable: request.resource.attr.team
+                    - value: red
+              - variable: request.resource.attr.public
+      matchedScopes:
+        scalar: ""
+  - resource:
+      kind: ternary_principal_attr
+      policyVersion: default
+    action: else_branch
+    want:
+      filter:
+        kind: KIND_CONDITIONAL
+        condition:
+          expression:
+            operator: if
+            operands:
+              - expression:
+                  operator: eq
+                  operands:
+                    - variable: request.resource.attr.status
+                    - value: draft
+              - variable: request.resource.attr.public
+              - expression:
+                  operator: eq
+                  operands:
+                    - variable: request.resource.attr.team
+                    - value: red
+      matchedScopes:
+        else_branch: ""
+  - resource:
+      kind: ternary_principal_attr
+      policyVersion: default
+    action: nested
+    want:
+      filter:
+        kind: KIND_CONDITIONAL
+        condition:
+          expression:
+            operator: if
+            operands:
+              - expression:
+                  operator: eq
+                  operands:
+                    - variable: request.resource.attr.status
+                    - value: draft
+              - expression:
+                  operator: if
+                  operands:
+                    - expression:
+                        operator: eq
+                        operands:
+                          - variable: request.resource.attr.kind
+                          - value: x
+                    - expression:
+                        operator: eq
+                        operands:
+                          - variable: request.resource.attr.team
+                          - value: red
+                    - variable: request.resource.attr.public
+              - value: false
+      matchedScopes:
+        nested: ""

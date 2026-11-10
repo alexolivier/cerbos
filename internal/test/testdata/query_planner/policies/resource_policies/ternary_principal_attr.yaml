@@ -1,0 +1,42 @@
+# yaml-language-server: $schema=../../../../../../schema/jsonschema/cerbos/policy/v1/Policy.schema.json
+---
+apiVersion: api.cerbos.dev/v1
+resourcePolicy:
+  version: default
+  resource: ternary_principal_attr
+  rules:
+    - actions:
+        - exists
+      effect: EFFECT_ALLOW
+      roles:
+        - user
+      condition:
+        match:
+          expr: 'R.attr.status == "draft" ? P.attr.teams.exists(t, t == R.attr.team) : R.attr.public'
+
+    - actions:
+        - scalar
+      effect: EFFECT_ALLOW
+      roles:
+        - user
+      condition:
+        match:
+          expr: 'R.attr.status == "draft" ? R.attr.team == P.attr.home : R.attr.public'
+
+    - actions:
+        - else_branch
+      effect: EFFECT_ALLOW
+      roles:
+        - user
+      condition:
+        match:
+          expr: 'R.attr.status == "draft" ? R.attr.public : R.attr.team == P.attr.home'
+
+    - actions:
+        - nested
+      effect: EFFECT_ALLOW
+      roles:
+        - user
+      condition:
+        match:
+          expr: 'R.attr.status == "draft" ? (R.attr.kind == "x" ? R.attr.team == P.attr.home : R.attr.public) : false'
